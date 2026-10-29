@@ -1,0 +1,4236 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content">
+<meta name="theme-color" content="#14110f">
+<title>Petronio Movelaria - Modelador 3D</title>
+<style>
+:root{
+  --bg:#14110f;--bg2:#1a1613;--panel:#1f1a16;--card:#2a231e;--card2:#352b22;--line:#3d332a;
+  --txt:#f4ede4;--mut:#a99d8f;--acc:#e0a458;--acc-ink:#2a1a08;--cota:#5fd0e8;
+  --dng:#ef7a63;--warn:#f0b35a;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  --vidro:rgba(26,22,19,.84);
+  --painel-w:400px;--trilho:68px;
+  color-scheme:dark;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+[hidden]{display:none!important}
+html,body{height:100%}
+body{font-family:system-ui,-apple-system,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--txt);overflow:hidden;font-size:14px}
+button,input,select{font-family:inherit;color:inherit}
+:focus-visible{outline:2px solid var(--cota);outline-offset:2px}
+.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+/* ---------- estrutura ----------
+   Celular em pé (padrão): 3D em cima, painel embaixo e abas no rodapé.
+   Celular deitado: abas num trilho à esquerda e painel lateral recolhível.
+   Computador/tablet: abas e painel fixos à esquerda, 3D à direita. */
+.app{display:grid;height:100vh;height:100dvh;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto auto}
+.viewport{grid-row:1;grid-column:1;position:relative;min-height:0;min-width:0;overflow:hidden;
+  background:radial-gradient(120% 90% at 50% 0%,#2d231b 0%,#14110f 62%)}
+#canvas3d{position:absolute;inset:0;touch-action:none;display:flex;align-items:center;justify-content:center;padding:24px;text-align:center;color:var(--mut)}
+#canvas3d canvas{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none}
+#planta2d{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;z-index:2;background:#191512;cursor:crosshair}
+.painel{grid-row:2;grid-column:1;height:46vh;height:46dvh;display:flex;flex-direction:column;overflow:hidden;min-width:0;
+  background:var(--panel);border-top:1px solid var(--line);transition:height .25s ease,width .25s ease}
+.app.fechado .painel{height:0;border-top-width:0}
+.tabbar{grid-row:3;grid-column:1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));background:var(--bg2);
+  border-top:1px solid var(--line);padding:0 env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)}
+
+/* ---------- barra superior flutuante ---------- */
+.barra{position:absolute;top:0;left:0;right:0;display:flex;gap:8px;overflow-x:auto;
+  padding:max(8px,env(safe-area-inset-top)) max(8px,env(safe-area-inset-right)) 8px 8px;
+  scrollbar-width:none;pointer-events:none;z-index:6}
+.barra::-webkit-scrollbar{display:none}
+.grupo{pointer-events:auto;display:flex;align-items:center;gap:2px;padding:3px;flex-shrink:0;
+  background:var(--vidro);border:1px solid var(--line);border-radius:14px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.app.modo-planta .so-3d,.app:not(.modo-planta) .so-planta{display:none}
+.marca{padding:3px 12px 3px 8px;gap:8px;font-weight:700;letter-spacing:.02em}
+.marca b{color:var(--acc)}
+.logo{width:24px;height:24px;fill:none;stroke:var(--acc);stroke-width:1.6;stroke-linejoin:round;stroke-linecap:round}
+.ic{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;flex-shrink:0}
+.ib,.tb{border:0;background:transparent;cursor:pointer;border-radius:11px;display:inline-flex;align-items:center;justify-content:center;gap:6px;transition:background .15s}
+.ib{width:42px;height:42px;flex-shrink:0}
+.tb{height:42px;padding:0 12px;font-size:12px;font-weight:600;letter-spacing:.02em;white-space:nowrap}
+.ib:disabled{opacity:.35;cursor:default}
+.tb[aria-pressed="true"]{color:var(--acc)}
+.tb[aria-pressed="false"]{color:var(--mut)}
+.status{position:absolute;top:calc(62px + env(safe-area-inset-top));left:8px;max-width:calc(100% - 16px);padding:6px 12px;border-radius:999px;font-size:12px;
+  background:var(--vidro);border:1px solid var(--line);color:var(--mut);z-index:5;pointer-events:none;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.status.alerta{color:var(--warn);border-color:var(--warn)}
+.chip{position:absolute;left:50%;bottom:10px;transform:translateX(-50%);width:min(calc(100% - 16px),560px);z-index:6;
+  display:flex;align-items:center;gap:4px;padding:6px 6px 6px 14px;background:var(--vidro);border:1px solid var(--acc);
+  border-radius:16px;backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px)}
+.chip-info{flex:1;min-width:0}
+.chip-nome{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip-dims{font-family:var(--mono);font-size:11px;color:var(--mut);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.chip-num{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--mut);flex-shrink:0}
+.chip-num input{width:84px;height:40px;padding:0 8px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;color:var(--txt);font:15px var(--mono);text-align:right}
+.chip-num input:focus{border-color:var(--acc);outline:none}
+.toast{position:fixed;top:calc(104px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);max-width:min(90vw,520px);padding:9px 16px;border-radius:12px;
+  background:var(--card2);border:1px solid var(--acc);color:var(--txt);font-size:13px;line-height:1.4;text-align:center;
+  opacity:0;pointer-events:none;transition:opacity .25s;z-index:90}
+.toast.on{opacity:1}
+
+/* ---------- abas ---------- */
+.tab{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;min-height:56px;min-width:0;border:0;padding:0 2px;
+  background:transparent;color:var(--mut);font-size:11px;font-weight:600;letter-spacing:.03em;cursor:pointer;
+  border-top:2px solid transparent;white-space:nowrap}
+.tab[aria-selected="true"]{color:var(--acc);border-top-color:var(--acc);background:var(--panel)}
+.painel-topo{display:flex;align-items:center;justify-content:space-between;padding:8px 8px 4px 16px}
+.painel-topo h2{font-size:12px;text-transform:uppercase;letter-spacing:.12em;color:var(--mut);font-weight:700}
+.painel-corpo{flex:1;overflow-y:auto;padding:6px 16px 20px;display:flex;flex-direction:column;gap:14px;overscroll-behavior:contain}
+.painel-corpo > div{display:flex;flex-direction:column;gap:14px}
+.sec-titulo{font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--mut);font-weight:700;margin-bottom:8px}
+.sec-titulo small{text-transform:none;letter-spacing:0;font-weight:400}
+
+/* ---------- componentes ---------- */
+.mods{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.mod{display:flex;flex-direction:column;gap:8px;padding:10px;text-align:left;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);border-radius:14px;transition:border-color .15s,transform .1s}
+.mod:active{transform:scale(.98)}
+.sw{height:44px;border-radius:9px;
+  background:repeating-linear-gradient(90deg,rgba(0,0,0,.12) 0 2px,transparent 2px 9px),var(--c)}
+.mod strong{font-size:13px}
+.mod small{font-family:var(--mono);font-size:11px;color:var(--mut)}
+details{background:var(--card);border:1px solid var(--line);border-radius:14px}
+summary{cursor:pointer;padding:12px 14px;font-size:13px;font-weight:600;list-style:none;display:flex;justify-content:space-between;gap:8px}
+summary::-webkit-details-marker{display:none}
+summary::after{content:'+';color:var(--acc);font-size:18px;line-height:1}
+details[open] summary::after{content:'–'}
+details .campos{padding:0 14px 14px}
+details .nota{padding:0 14px 14px}
+.campos{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.campo{display:flex;flex-direction:column;gap:4px;min-width:0}
+.campo.largo{grid-column:1 / -1}
+.campo.fim{justify-content:flex-end}
+.campo label,.campo .rot{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--mut)}
+.campo input{width:100%;height:44px;padding:0 12px;background:var(--bg2);border:1px solid var(--line);border-radius:10px;
+  color:var(--txt);font-size:15px;font-family:var(--mono)}
+.campo input[type=text]{font-family:inherit}
+.campo input[type=color]{padding:4px;cursor:pointer}
+.campo input:disabled{opacity:.4}
+.campo input:focus{border-color:var(--acc);outline:none}
+.btn{min-height:44px;padding:0 16px;border:1px solid var(--line);border-radius:12px;background:var(--card);
+  font-size:13px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:background .15s,border-color .15s;text-align:center}
+.btn.primario{background:var(--acc);border-color:var(--acc);color:var(--acc-ink)}
+.btn.perigo{color:var(--dng);border-color:rgba(239,122,99,.5)}
+.btn:disabled{opacity:.4;cursor:default}
+.linha2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.range{display:flex;align-items:center;gap:10px}
+.range input{flex:1;accent-color:var(--acc)}
+#lista{display:flex;flex-direction:column;gap:6px;max-height:220px;overflow-y:auto}
+.item{display:flex;justify-content:space-between;gap:10px;padding:10px 12px;text-align:left;cursor:pointer;
+  background:var(--card);border:1px solid var(--line);border-radius:10px;font-size:13px}
+.item.ativo{border-color:var(--acc);background:var(--card2)}
+.item span:last-child{font-family:var(--mono);font-size:11px;color:var(--mut);white-space:nowrap}
+.vazio,.nota{font-size:12px;color:var(--mut);line-height:1.5}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th,td{padding:7px 6px;text-align:left;border-bottom:1px solid var(--line)}
+th.mod-t{background:var(--card);color:var(--acc);font-size:12px}
+td.n{font-family:var(--mono);text-align:right;white-space:nowrap}
+
+/* ---------- planta baixa ---------- */
+.dica{font-size:12px;line-height:1.55;color:var(--mut);background:var(--card);border:1px dashed var(--line);border-radius:12px;padding:10px 12px}
+.dica b{color:var(--txt)}
+.metricas{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.metrica{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:8px 10px;min-width:0}
+.metrica small{display:block;font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut)}
+.metrica b{font-family:var(--mono);font-size:14px;white-space:nowrap}
+.pl-lista{display:flex;flex-direction:column;gap:6px}
+.pl-item{display:flex;align-items:center;gap:8px;padding:4px 6px 4px 12px;background:var(--card);border:1px solid var(--line);border-radius:12px;min-width:0}
+.pl-item.ativo{border-color:var(--acc);background:var(--card2)}
+.pl-nome{flex:1;min-width:0;border:0;background:none;text-align:left;cursor:pointer;font-size:13px;font-weight:600;padding:8px 0}
+.pl-nome small{display:block;font-weight:400;color:var(--mut);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.num-cm{display:flex;align-items:center;gap:4px;font-size:11px;color:var(--mut);flex-shrink:0}
+.num-cm input{width:88px;height:40px;padding:0 8px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;color:var(--txt);font:15px var(--mono);text-align:right}
+.num-cm input:focus,.pl-sel:focus{border-color:var(--acc);outline:none}
+.seg{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+.seg button{height:44px;border:1px solid var(--line);border-radius:10px;background:var(--bg2);font-size:18px;cursor:pointer}
+.seg button[aria-pressed="true"]{border-color:var(--acc);color:var(--acc);background:var(--card2)}
+.ab-card{border:1px solid var(--line);border-radius:12px;padding:10px;display:flex;flex-direction:column;gap:10px;background:var(--card)}
+.ab-card.ativo{border-color:var(--acc)}
+.ab-topo{display:flex;align-items:center;justify-content:space-between;gap:8px;font-weight:600;font-size:13px}
+.ab-topo .ib{width:36px;height:36px}
+.ab-card .campos{grid-template-columns:repeat(2,minmax(0,1fr))}
+.ab-card .campo input{height:40px}
+.pl-sel{max-width:46%;height:40px;padding:0 8px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;font-size:13px}
+.med-valor{font-family:var(--mono);font-size:13px;white-space:nowrap}
+
+/* ---------- tela de foto com medidas ---------- */
+.tela{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;background:var(--bg);
+  padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+.tela-topo{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 6px 6px 16px;border-bottom:1px solid var(--line);background:var(--bg2)}
+.tela-topo h2{font-size:15px;font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.tela-acoes{display:flex;gap:2px}
+.tela-corpo{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr);grid-template-rows:minmax(0,1fr) auto}
+.foto-area{position:relative;min-height:0;overflow:hidden;background:#0c0a09;touch-action:none}
+.foto-area canvas,.foto-area video{position:absolute;inset:0;width:100%;height:100%;display:block}
+.foto-area canvas{touch-action:none;cursor:crosshair}
+.foto-area video{object-fit:contain;background:#000}
+.foto-vazio{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;padding:24px;text-align:center;color:var(--mut);line-height:1.5}
+.foto-vazio .linha2{width:min(100%,420px)}
+.foto-cam-barra{position:absolute;left:0;right:0;bottom:0;display:flex;align-items:center;justify-content:center;gap:28px;padding:16px;
+  background:linear-gradient(transparent,rgba(0,0,0,.6))}
+.obturador{width:72px;height:72px;border-radius:50%;border:4px solid #fff;background:rgba(255,255,255,.25);cursor:pointer}
+.obturador:active{background:rgba(255,255,255,.6)}
+.foto-lado{max-height:42vh;max-height:42dvh;overflow-y:auto;padding:12px 16px calc(12px + env(safe-area-inset-bottom));border-top:1px solid var(--line);
+  background:var(--panel);display:flex;flex-direction:column;gap:10px}
+.fl-item{display:flex;align-items:center;gap:6px;padding:4px 4px 4px 10px;background:var(--card);border:1px solid var(--line);border-radius:12px}
+.fl-item.ativo{border-color:var(--acc);background:var(--card2)}
+.fl-item input{height:40px;min-width:0;padding:0 8px;background:var(--bg2);border:1px solid var(--line);border-radius:9px;color:var(--txt);font-size:14px}
+.fl-item input:focus{border-color:var(--acc);outline:none}
+.fl-nome{flex:1}
+.fl-cm{width:84px;font-family:var(--mono)!important;text-align:right}
+.fl-item .ib{width:38px;height:38px}
+.fl-item .ib[aria-pressed="true"]{color:var(--acc)}
+.fl-un{font-size:11px;color:var(--mut)}
+
+.tela-retorno{align-items:center;justify-content:center;padding:24px;z-index:45}
+.retorno-caixa{width:min(100%,420px);display:flex;flex-direction:column;gap:14px;text-align:center}
+.retorno-caixa h2{font-size:18px}
+a.btn{text-decoration:none;color:var(--acc-ink)}
+
+/* ---------- AR (sobreposição exibida durante a sessão WebXR) ---------- */
+.ar-ui{position:fixed;inset:0;z-index:80;display:flex;flex-direction:column;justify-content:space-between;background:transparent;color:#fff;
+  padding:max(10px,env(safe-area-inset-top)) max(10px,env(safe-area-inset-right)) max(14px,env(safe-area-inset-bottom)) max(10px,env(safe-area-inset-left))}
+.ar-topo{display:flex;justify-content:space-between;align-items:flex-start;gap:8px}
+.ar-mira{position:absolute;left:50%;top:50%;width:30px;height:30px;margin:-15px 0 0 -15px;border:2px solid #fff;border-radius:50%;
+  box-shadow:0 0 0 1px rgba(0,0,0,.5);pointer-events:none}
+.ar-baixo{display:flex;flex-direction:column;gap:12px;align-items:center}
+.ar-info{max-width:min(92vw,520px);padding:10px 14px;border-radius:14px;background:rgba(20,17,15,.82);font-size:14px;line-height:1.4;text-align:center}
+.ar-botoes{display:flex;align-items:center;gap:22px}
+.ar-marcar{width:76px;height:76px;border-radius:50%;border:4px solid #fff;background:var(--acc);color:var(--acc-ink);cursor:pointer;display:flex;align-items:center;justify-content:center}
+.ar-marcar .ic{width:34px;height:34px;stroke-width:2.4}
+.ar-x{background:var(--vidro)!important;border:1px solid var(--line)}
+
+/* ---------- layouts ---------- */
+@media (min-width:900px) and (min-height:541px){
+  .app{grid-template-columns:var(--painel-w) minmax(0,1fr);grid-template-rows:auto minmax(0,1fr)}
+  .tabbar{grid-column:1;grid-row:1;border-top:0;border-bottom:1px solid var(--line);padding:0}
+  .tab{border-top:0;border-bottom:2px solid transparent;min-height:60px}
+  .tab[aria-selected="true"]{border-bottom-color:var(--acc)}
+  .painel{grid-column:1;grid-row:2;height:auto!important;border-top:0;border-right:1px solid var(--line)}
+  .viewport{grid-column:2;grid-row:1 / span 2}
+  .fechar{display:none}
+  .tela-corpo{grid-template-columns:minmax(0,1fr) 360px;grid-template-rows:minmax(0,1fr)}
+  .foto-lado{max-height:none;border-top:0;border-left:1px solid var(--line)}
+}
+@media (min-width:1400px) and (min-height:541px){:root{--painel-w:440px}}
+@media (orientation:landscape) and (max-height:540px){
+  .app{grid-template-columns:auto auto minmax(0,1fr);grid-template-rows:minmax(0,1fr)}
+  .tabbar{grid-column:1;grid-row:1;display:flex;flex-direction:column;width:calc(var(--trilho) + env(safe-area-inset-left));
+    padding:0 0 env(safe-area-inset-bottom) env(safe-area-inset-left);border-top:0;border-right:1px solid var(--line)}
+  .tab{flex:1;min-height:0;font-size:10px;border-top:0;border-left:2px solid transparent}
+  .tab[aria-selected="true"]{border-left-color:var(--acc)}
+  .painel{grid-column:2;grid-row:1;height:auto;width:min(360px,46vw);border-top:0;border-right:1px solid var(--line)}
+  .app.fechado .painel{height:auto;width:0;border-right-width:0}
+  .viewport{grid-column:3;grid-row:1}
+  .painel-corpo{padding-bottom:calc(20px + env(safe-area-inset-bottom))}
+  .status{top:58px}
+  .toast{top:64px}
+  .tela-corpo{grid-template-columns:minmax(0,1fr) min(340px,42vw);grid-template-rows:minmax(0,1fr)}
+  .foto-lado{max-height:none;border-top:0;border-left:1px solid var(--line)}
+}
+@media (max-width:520px){.marca span{display:none}.marca{padding:3px 8px}}
+@media (hover:hover){
+  .ib:hover,.tb:hover{background:var(--card)}
+  .ib:disabled:hover{background:transparent}
+  .mod:hover,.btn:hover{border-color:var(--acc)}
+  .btn.primario:hover{filter:brightness(1.08)}
+  .btn.perigo:hover{background:rgba(239,122,99,.12);border-color:var(--dng)}
+  .btn:disabled:hover{border-color:var(--line)}
+}
+/* toque: campos com 16px evitam o zoom automático do iPhone ao focar */
+@media (pointer:coarse){
+  .campo input,.num-cm input,.chip-num input,.fl-item input,.pl-sel{font-size:16px}
+  .ib{width:44px;height:44px}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important}}
+</style>
+<script>
+/* Carrega Three.js com mirrors de reserva; o 3D só inicia quando tudo estiver pronto.
+   A planta baixa e as fotos com medidas funcionam mesmo sem o Three.js. */
+(function () {
+  function carregar(urls) {
+    return new Promise(function (ok, erro) {
+      var i = 0;
+      (function tentar() {
+        if (i >= urls.length) { erro(new Error('Falha ao carregar bibliotecas')); return; }
+        var s = document.createElement('script');
+        s.src = urls[i++];
+        s.onload = function () { ok(); };
+        s.onerror = function () { s.remove(); tentar(); };
+        document.head.appendChild(s);
+      })();
+    });
+  }
+  window.__libs = carregar([
+    'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js',
+    'https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js',
+    'https://unpkg.com/three@0.128.0/build/three.min.js'
+  ]).then(function () {
+    return carregar([
+      'https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js',
+      'https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js'
+    ]);
+  });
+})();
+</script>
+</head>
+<body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-edit" viewBox="0 0 24 24"><path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M9 6h11M9 12h11M9 18h11M4 6h1M4 12h1M4 18h1"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/></symbol>
+  <symbol id="i-plan" viewBox="0 0 24 24"><path d="M4 4h16v16H4z"/><path d="M4 13h7v7M11 4v5M15 13h5"/></symbol>
+  <symbol id="i-undo" viewBox="0 0 24 24"><path d="M9 7L4 12l5 5"/><path d="M4 12h10a6 6 0 010 8h-2"/></symbol>
+  <symbol id="i-redo" viewBox="0 0 24 24"><path d="M15 7l5 5-5 5"/><path d="M20 12H10a6 6 0 000 8h2"/></symbol>
+  <symbol id="i-rotl" viewBox="0 0 24 24"><path d="M4 12a8 8 0 108-8"/><path d="M4 4v5h5"/></symbol>
+  <symbol id="i-rotr" viewBox="0 0 24 24"><path d="M20 12a8 8 0 11-8-8"/><path d="M20 4v5h-5"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 24 24"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M15 9V6a2 2 0 00-2-2H6a2 2 0 00-2 2v7a2 2 0 002 2h3"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/></symbol>
+  <symbol id="i-focus" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 3v3M12 18v3M3 12h3M18 12h3"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></symbol>
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></symbol>
+  <symbol id="i-cam" viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"/><circle cx="12" cy="13" r="3.5"/></symbol>
+  <symbol id="i-ar" viewBox="0 0 24 24"><path d="M4 8V4h4M16 4h4v4M20 16v4h-4M8 20H4v-4"/><path d="M12 7l4.5 2.5v5L12 17l-4.5-2.5v-5z"/></symbol>
+  <symbol id="i-split" viewBox="0 0 24 24"><path d="M3 12h6M15 12h6M12 5v14"/></symbol>
+  <symbol id="i-door" viewBox="0 0 24 24"><path d="M4 20h16M7 20V4h10v16"/><path d="M13.5 12h.5"/></symbol>
+  <symbol id="i-window" viewBox="0 0 24 24"><rect x="4" y="5" width="16" height="14" rx="1"/><path d="M12 5v14M4 12h16"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><path d="M12 4l2.4 5 5.6.6-4.2 3.8 1.2 5.6L12 16.3 7 19l1.2-5.6L4 9.6 9.6 9z"/></symbol>
+  <symbol id="i-image" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M21 16l-5-5-8 8"/></symbol>
+</svg>
+
+<div class="app" id="app">
+  <main class="viewport" id="viewport">
+    <div id="canvas3d">Carregando visualizador 3D…</div>
+    <canvas id="planta2d" hidden aria-label="Planta baixa: toque para marcar os cantos do ambiente"></canvas>
+
+    <div class="barra">
+      <div class="grupo marca">
+        <svg class="logo" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
+        <span>Petronio <b>3D</b></span>
+      </div>
+      <div class="grupo">
+        <button class="ib" id="b-undo" data-act="desfazer" aria-label="Desfazer" title="Desfazer (Ctrl+Z)" disabled><svg class="ic"><use href="#i-undo"/></svg></button>
+        <button class="ib" id="b-redo" data-act="refazer" aria-label="Refazer" title="Refazer (Ctrl+Y)" disabled><svg class="ic"><use href="#i-redo"/></svg></button>
+      </div>
+      <div class="grupo so-3d">
+        <button class="tb" data-act="vista-persp">3D</button>
+        <button class="tb" data-act="vista-topo">Topo</button>
+        <button class="tb" data-act="vista-frente">Frente</button>
+        <button class="tb" data-act="vista-lateral">Lado</button>
+        <button class="ib" data-act="enquadrar" aria-label="Enquadrar cena" title="Enquadrar cena"><svg class="ic"><use href="#i-focus"/></svg></button>
+      </div>
+      <div class="grupo so-3d">
+        <button class="tb" id="btn-cotas" data-act="cotas" aria-pressed="true">Cotas: todas</button>
+        <button class="tb" data-act="snap" aria-pressed="true">Encaixe</button>
+      </div>
+      <div class="grupo so-planta">
+        <button class="ib" data-act="pl-enquadrar" aria-label="Enquadrar planta" title="Enquadrar planta"><svg class="ic"><use href="#i-focus"/></svg></button>
+        <button class="tb" id="btn-esquadro" data-act="pl-esquadro" aria-pressed="true" title="Prende os traços em 0°, 45° e 90° e alinha com os outros cantos">Esquadro</button>
+        <button class="tb" data-act="snap" aria-pressed="true" title="Grade de 5 cm">Encaixe</button>
+        <button class="tb" data-act="ver-3d"><svg class="ic"><use href="#i-cube"/></svg>Ver 3D</button>
+      </div>
+    </div>
+
+    <div class="status" id="status" role="status" aria-live="polite">Objetos: 0</div>
+
+    <div class="chip" id="chip" hidden>
+      <div class="chip-info"><div class="chip-nome" id="chip-nome"></div><div class="chip-dims" id="chip-dims"></div></div>
+      <button class="ib" data-act="girar-" aria-label="Girar 90° à esquerda" title="Girar -90° (Shift+R)"><svg class="ic"><use href="#i-rotl"/></svg></button>
+      <button class="ib" data-act="girar+" aria-label="Girar 90° à direita" title="Girar +90° (R)"><svg class="ic"><use href="#i-rotr"/></svg></button>
+      <button class="ib" data-act="duplicar" aria-label="Duplicar" title="Duplicar (D)"><svg class="ic"><use href="#i-copy"/></svg></button>
+      <button class="ib" data-act="excluir" aria-label="Excluir" title="Excluir (Delete)"><svg class="ic"><use href="#i-trash"/></svg></button>
+      <button class="ib" data-act="desselecionar" aria-label="Fechar seleção" title="Fechar (Esc)"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+
+    <div class="chip" id="chip-pl" hidden>
+      <div class="chip-info"><div class="chip-nome" id="chip-pl-nome"></div><div class="chip-dims" id="chip-pl-info"></div></div>
+      <label class="chip-num" id="chip-pl-campo"><span class="sr" id="chip-pl-rotulo">Comprimento em cm</span><input type="number" inputmode="decimal" id="chip-pl-valor" min="1" step="1"><span>cm</span></label>
+      <button class="ib" id="chip-pl-dividir" data-act="pl-dividir" aria-label="Dividir parede ao meio" title="Dividir parede ao meio (cria um canto)"><svg class="ic"><use href="#i-split"/></svg></button>
+      <button class="ib" data-act="pl-excluir" aria-label="Excluir" title="Excluir (Delete)"><svg class="ic"><use href="#i-trash"/></svg></button>
+      <button class="ib" data-act="pl-desselecionar" aria-label="Fechar seleção" title="Fechar (Esc)"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+  </main>
+
+  <section class="painel" id="painel" aria-label="Painel de controle">
+    <div class="painel-topo">
+      <h2 id="painel-titulo">Adicionar</h2>
+      <button class="ib fechar" data-act="fechar-painel" aria-label="Recolher painel"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+    <div class="painel-corpo">
+
+      <div id="pane-planta" role="tabpanel" aria-labelledby="tab-planta" hidden>
+        <p class="dica" id="pl-dica"></p>
+        <div class="metricas">
+          <div class="metrica"><small>Paredes</small><b id="pl-n">0</b></div>
+          <div class="metrica"><small>Área</small><b id="pl-area">–</b></div>
+          <div class="metrica"><small>Perímetro</small><b id="pl-perim">–</b></div>
+        </div>
+        <div class="linha2">
+          <button class="btn" id="btn-pl-ultimo" data-act="pl-desfazer-ponto">Apagar último canto</button>
+          <button class="btn" id="btn-pl-fechar" data-act="pl-fechar">Fechar ambiente</button>
+        </div>
+
+        <details>
+          <summary>Ambiente retangular</summary>
+          <div class="campos">
+            <div class="campo"><label for="pl-ret-w">Largura (cm)</label><input type="number" inputmode="decimal" id="pl-ret-w" value="400" min="10" max="3000"></div>
+            <div class="campo"><label for="pl-ret-d">Profundidade (cm)</label><input type="number" inputmode="decimal" id="pl-ret-d" value="300" min="10" max="3000"></div>
+            <div class="campo largo"><button class="btn primario" data-act="pl-retangulo">Criar retângulo</button></div>
+          </div>
+        </details>
+
+        <details>
+          <summary>Parede por medida (trena)</summary>
+          <div class="campos">
+            <div class="campo largo"><label for="pl-comp">Comprimento (cm)</label><input type="number" inputmode="decimal" id="pl-comp" value="300" min="1" max="3000"></div>
+            <div class="campo largo"><span class="rot" id="pl-dir-rot">Direção</span>
+              <div class="seg" id="pl-dirs" role="group" aria-labelledby="pl-dir-rot">
+                <button type="button" data-dir="0" aria-pressed="true" aria-label="Para a direita">→</button>
+                <button type="button" data-dir="90" aria-pressed="false" aria-label="Para baixo">↓</button>
+                <button type="button" data-dir="180" aria-pressed="false" aria-label="Para a esquerda">←</button>
+                <button type="button" data-dir="270" aria-pressed="false" aria-label="Para cima">↑</button>
+              </div>
+            </div>
+            <div class="campo"><label for="pl-ang">Ângulo (°)</label><input type="number" inputmode="decimal" id="pl-ang" value="0" step="1"></div>
+            <div class="campo fim"><button class="btn primario" data-act="pl-add-medida">Adicionar</button></div>
+          </div>
+          <p class="nota">Meça cada parede com a trena e adicione na ordem, dando a volta no ambiente. Ao voltar ao primeiro canto, o ambiente fecha sozinho.</p>
+        </details>
+
+        <div>
+          <div class="sec-titulo">Paredes <small>· medidas internas em cm</small></div>
+          <div class="pl-lista" id="pl-lista"></div>
+        </div>
+
+        <div id="pl-aberturas" hidden>
+          <div class="sec-titulo" id="pl-ab-titulo">Portas e janelas</div>
+          <div class="linha2">
+            <button class="btn" data-act="pl-add-porta"><svg class="ic"><use href="#i-door"/></svg>Porta</button>
+            <button class="btn" data-act="pl-add-janela"><svg class="ic"><use href="#i-window"/></svg>Janela</button>
+          </div>
+          <div class="pl-lista" id="pl-ab-lista" style="margin-top:10px"></div>
+        </div>
+
+        <div class="campos">
+          <div class="campo"><label for="pl-pe">Pé-direito (cm)</label><input type="number" inputmode="decimal" id="pl-pe" value="260" min="50" max="1000"></div>
+          <div class="campo fim"><button class="btn" data-act="pl-esquadrejar" title="Alinha em 90° as paredes que estão quase retas">Esquadrejar</button></div>
+        </div>
+
+        <div>
+          <div class="sec-titulo">Escanear o ambiente</div>
+          <div class="linha2">
+            <button class="btn" id="btn-ar" data-act="scan-ar"><svg class="ic"><use href="#i-ar"/></svg>Medir com AR</button>
+            <button class="btn" data-act="scan-foto"><svg class="ic"><use href="#i-cam"/></svg>Foto com medidas</button>
+          </div>
+          <p class="nota" id="ar-nota" style="margin-top:8px">Verificando suporte a AR…</p>
+          <div class="campo" id="ar-config" hidden style="margin-top:10px">
+            <label for="ar-url">Endereço do medidor AR (https)</label>
+            <input type="url" id="ar-url" inputmode="url" autocomplete="off" spellcheck="false" placeholder="https://seu-usuario.github.io/petronio3d/">
+          </div>
+        </div>
+        <div id="pl-fotos" hidden></div>
+        <div id="pl-medidas" hidden></div>
+
+        <div class="linha2">
+          <button class="btn primario" data-act="pl-gerar">Gerar paredes no 3D</button>
+          <button class="btn" data-act="pl-png">Planta em PNG</button>
+        </div>
+        <button class="btn perigo" id="btn-pl-limpar" data-act="pl-limpar">Limpar planta</button>
+        <p class="nota">As medidas da planta são internas (de parede a parede, por dentro); as paredes de 11 cm ficam do lado de fora. Gerar de novo substitui só as paredes criadas pela planta.</p>
+      </div>
+
+      <div id="pane-add" role="tabpanel" aria-labelledby="tab-add">
+        <div>
+          <div class="sec-titulo">Módulos</div>
+          <div class="mods">
+            <button class="mod" data-act="add-pia"><div class="sw" style="--c:#4b5563"></div><strong>Pia</strong><small>120 × 82 × 60 cm</small></button>
+            <button class="mod" data-act="add-aereo"><div class="sw" style="--c:#d6a05b"></div><strong>Aéreo</strong><small>120 × 60 × 35 cm</small></button>
+            <button class="mod" data-act="add-roupeiro"><div class="sw" style="--c:#8b5e3c"></div><strong>Roupeiro</strong><small>180 × 220 × 60 cm</small></button>
+            <button class="mod" data-act="exemplo"><div class="sw" style="--c:#352b22"></div><strong>Cena exemplo</strong><small>cozinha + roupeiro</small></button>
+          </div>
+        </div>
+        <details>
+          <summary>Parede avulsa (espessura fixa de 11 cm)</summary>
+          <div class="campos">
+            <div class="campo"><label for="p-largura">Largura (cm)</label><input type="number" inputmode="decimal" id="p-largura" value="300" min="1" max="3000" step="10"></div>
+            <div class="campo"><label for="p-altura">Altura (cm)</label><input type="number" inputmode="decimal" id="p-altura" value="260" min="1" max="1000" step="10"></div>
+            <div class="campo largo"><button class="btn primario" data-act="add-parede">Adicionar parede</button></div>
+          </div>
+          <p class="nota">Para o ambiente inteiro, use a aba Planta: desenhe ou escaneie e gere as paredes.</p>
+        </details>
+        <details>
+          <summary>Módulo personalizado</summary>
+          <div class="campos">
+            <div class="campo largo"><label for="c-nome">Nome</label><input type="text" id="c-nome" value="Módulo" maxlength="40"></div>
+            <div class="campo"><label for="c-w">Largura (cm)</label><input type="number" inputmode="decimal" id="c-w" value="60" min="1" max="1000"></div>
+            <div class="campo"><label for="c-h">Altura (cm)</label><input type="number" inputmode="decimal" id="c-h" value="80" min="1" max="1000"></div>
+            <div class="campo"><label for="c-d">Profundidade (cm)</label><input type="number" inputmode="decimal" id="c-d" value="50" min="1" max="1000"></div>
+            <div class="campo"><label for="c-elev">Elevação (cm)</label><input type="number" inputmode="decimal" id="c-elev" value="0" min="0" max="1000"></div>
+            <div class="campo largo"><label for="c-cor">Cor</label><input type="color" id="c-cor" value="#9ca3af"></div>
+            <div class="campo largo"><button class="btn primario" data-act="add-custom">Adicionar módulo</button></div>
+          </div>
+        </details>
+      </div>
+
+      <div id="pane-edit" role="tabpanel" aria-labelledby="tab-edit" hidden>
+        <div>
+          <div class="sec-titulo">Selecionado: <span id="sel-titulo" style="color:var(--acc)">nada</span></div>
+          <div class="campos">
+            <div class="campo largo"><label for="i-nome">Nome</label><input type="text" id="i-nome" maxlength="40" disabled></div>
+            <div class="campo"><label for="i-w">Largura (cm)</label><input type="number" inputmode="decimal" id="i-w" min="1" max="3000" disabled></div>
+            <div class="campo"><label for="i-h">Altura (cm)</label><input type="number" inputmode="decimal" id="i-h" min="1" max="1000" disabled></div>
+            <div class="campo"><label for="i-d">Profundidade (cm)</label><input type="number" inputmode="decimal" id="i-d" min="1" max="1000" disabled></div>
+            <div class="campo"><label for="i-elev">Elevação (cm)</label><input type="number" inputmode="decimal" id="i-elev" min="0" max="1000" disabled></div>
+            <div class="campo"><label for="i-x">Posição X (cm)</label><input type="number" inputmode="decimal" id="i-x" step="5" disabled></div>
+            <div class="campo"><label for="i-z">Posição Z (cm)</label><input type="number" inputmode="decimal" id="i-z" step="5" disabled></div>
+            <div class="campo"><label for="i-rot">Rotação (°)</label><input type="number" inputmode="decimal" id="i-rot" step="15" disabled></div>
+            <div class="campo"><label for="i-cor">Cor</label><input type="color" id="i-cor" disabled></div>
+          </div>
+        </div>
+        <div>
+          <div class="sec-titulo">Itens da cena</div>
+          <div id="lista"></div>
+          <div class="vazio" id="resumo" style="margin-top:8px"></div>
+        </div>
+      </div>
+
+      <div id="pane-pecas" role="tabpanel" aria-labelledby="tab-pecas" hidden>
+        <div class="campos">
+          <div class="campo largo"><label for="esp-chapa">Espessura da chapa (mm)</label><input type="number" inputmode="decimal" id="esp-chapa" value="15" min="3" max="50" step="1"></div>
+        </div>
+        <div id="pecas-resumo" class="vazio"></div>
+        <div id="pecas-tabela"></div>
+        <button class="btn primario" data-act="csv-pecas">Exportar lista (CSV)</button>
+        <p class="nota">Estimativa simplificada: caixa com 2 laterais, base e topo, fundo de 6 mm e portas. Não inclui ferragens, fitas de borda, prateleiras nem folgas. Confira sempre com o seu projeto de marcenaria.</p>
+      </div>
+
+      <div id="pane-arq" role="tabpanel" aria-labelledby="tab-arq" hidden>
+        <div>
+          <div class="sec-titulo">Projeto</div>
+          <div class="linha2">
+            <button class="btn" data-act="salvar-json">Exportar JSON</button>
+            <button class="btn" data-act="abrir-json">Importar JSON</button>
+            <button class="btn" data-act="png">Imagem 3D (PNG)</button>
+            <button class="btn perigo" id="btn-limpar" data-act="limpar">Limpar cena</button>
+          </div>
+          <input type="file" id="arquivo" accept=".json,application/json" hidden>
+          <p class="nota" style="margin-top:10px">O projeto (móveis e planta) é salvo automaticamente neste navegador quando o armazenamento está disponível. Dentro de notebooks, use Exportar JSON.</p>
+        </div>
+        <div>
+          <div class="sec-titulo">Tamanho do texto das cotas</div>
+          <div class="range"><input type="range" id="esc-texto" min="0.6" max="2.4" step="0.1" value="1" aria-label="Tamanho do texto das cotas"></div>
+        </div>
+        <p class="nota">Atalhos (teclado): Ctrl+Z desfaz, Ctrl+Y refaz, R gira, D duplica, Delete exclui, setas movem 5 cm (Shift = 1 cm), Esc fecha a seleção. Na planta: Delete apaga o canto/parede selecionado e as setas movem o canto.</p>
+      </div>
+
+    </div>
+  </section>
+
+  <nav class="tabbar" role="tablist" aria-label="Seções">
+    <button class="tab" id="tab-planta" role="tab" data-aba="planta" aria-controls="pane-planta" aria-selected="false"><svg class="ic"><use href="#i-plan"/></svg>Planta</button>
+    <button class="tab" id="tab-add" role="tab" data-aba="add" aria-controls="pane-add" aria-selected="true"><svg class="ic"><use href="#i-plus"/></svg>Adicionar</button>
+    <button class="tab" id="tab-edit" role="tab" data-aba="edit" aria-controls="pane-edit" aria-selected="false"><svg class="ic"><use href="#i-edit"/></svg>Editar</button>
+    <button class="tab" id="tab-pecas" role="tab" data-aba="pecas" aria-controls="pane-pecas" aria-selected="false"><svg class="ic"><use href="#i-list"/></svg>Peças</button>
+    <button class="tab" id="tab-arq" role="tab" data-aba="arq" aria-controls="pane-arq" aria-selected="false"><svg class="ic"><use href="#i-file"/></svg>Arquivo</button>
+  </nav>
+</div>
+
+<div class="tela" id="tela-foto" role="dialog" aria-modal="true" aria-labelledby="foto-titulo" hidden>
+  <header class="tela-topo">
+    <h2 id="foto-titulo">Foto com medidas</h2>
+    <div class="tela-acoes">
+      <button class="ib" data-act="foto-ajustar" aria-label="Ajustar foto à tela" title="Ajustar à tela"><svg class="ic"><use href="#i-focus"/></svg></button>
+      <button class="ib" data-act="foto-fechar" aria-label="Fechar" title="Fechar (Esc)"><svg class="ic"><use href="#i-close"/></svg></button>
+    </div>
+  </header>
+  <div class="tela-corpo">
+    <div class="foto-area" id="foto-area">
+      <canvas id="foto-cv" hidden></canvas>
+      <video id="foto-video" playsinline muted hidden></video>
+      <div class="foto-vazio" id="foto-vazio">
+        <svg class="ic" style="width:44px;height:44px;color:var(--acc)" aria-hidden="true"><use href="#i-cam"/></svg>
+        <p>Fotografe a parede ou o ambiente e depois arraste o dedo sobre a foto para criar as linhas de medida. Em cada linha você digita a medida da trena.</p>
+        <div class="linha2">
+          <button class="btn primario" data-act="foto-camera"><svg class="ic"><use href="#i-cam"/></svg>Câmera</button>
+          <button class="btn" data-act="foto-arquivo"><svg class="ic"><use href="#i-image"/></svg>Tirar ou escolher foto</button>
+        </div>
+      </div>
+      <div class="foto-cam-barra" id="foto-cam-barra" hidden>
+        <button class="btn" data-act="foto-cam-cancelar">Cancelar</button>
+        <button class="obturador" data-act="foto-capturar" aria-label="Capturar foto"></button>
+        <span style="width:96px"></span>
+      </div>
+    </div>
+    <aside class="foto-lado" aria-label="Medidas da foto">
+      <p class="nota" id="foto-dica">Arraste sobre a foto para criar uma linha de medida. Dois dedos movem e dão zoom.</p>
+      <div class="pl-lista" id="foto-linhas"></div>
+      <div class="linha2">
+        <button class="btn" data-act="foto-nova"><svg class="ic"><use href="#i-cam"/></svg>Nova foto</button>
+        <button class="btn primario" id="btn-foto-png" data-act="foto-png">Salvar imagem</button>
+      </div>
+      <p class="nota">★ marca a linha de referência: com ela, as linhas sem medida mostram uma estimativa (≈), válida só para o mesmo plano da foto. As fotos ficam só nesta sessão; use Salvar imagem para guardar.</p>
+    </aside>
+  </div>
+  <input type="file" id="foto-input" accept="image/*" hidden>
+</div>
+
+<div class="ar-ui" id="ar-ui" hidden>
+  <div class="ar-topo">
+    <div class="grupo">
+      <button class="tb" id="ar-m-cantos" data-act="ar-cantos" aria-pressed="true">Cantos do piso</button>
+      <button class="tb" id="ar-m-trena" data-act="ar-trena" aria-pressed="false">Trena</button>
+    </div>
+    <button class="ib ar-x" data-act="ar-sair" aria-label="Sair sem salvar"><svg class="ic"><use href="#i-close"/></svg></button>
+  </div>
+  <div class="ar-mira" aria-hidden="true"></div>
+  <div class="ar-baixo">
+    <div class="ar-info" id="ar-info" role="status">Aponte a câmera para o piso e mova o celular devagar até aparecer o alvo.</div>
+    <div class="ar-botoes">
+      <button class="btn" id="ar-desfazer" data-act="ar-desfazer">Desfazer</button>
+      <button class="ar-marcar" data-act="ar-marcar" aria-label="Marcar ponto"><svg class="ic"><use href="#i-plus"/></svg></button>
+      <button class="btn primario" id="ar-concluir" data-act="ar-concluir">Concluir</button>
+    </div>
+  </div>
+</div>
+
+<div class="tela tela-retorno" id="tela-retorno" hidden>
+  <div class="retorno-caixa">
+    <svg class="logo" style="width:56px;height:56px;margin:0 auto" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M12 12l8-4.5M12 12v9M12 12L4 7.5"/></svg>
+    <h2>Medidor AR · Petronio 3D</h2>
+    <p class="nota" id="retorno-texto">Toque em Iniciar medição, aponte a câmera para o piso e marque os cantos do ambiente. No fim, toque em Enviar para o Petronio 3D.</p>
+    <button class="btn primario" data-act="scan-ar"><svg class="ic"><use href="#i-ar"/></svg>Iniciar medição AR</button>
+    <a class="btn primario" id="retorno-enviar" hidden>Enviar para o Petronio 3D</a>
+    <p class="nota">Modo Trena: dentro do AR, toque em "Trena" para medir pé-direito, vãos e janelas. Precisão típica de 1 a 3 cm; confira com a trena.</p>
+  </div>
+</div>
+
+<div class="toast" id="toast" role="status"></div>
+
+<script>
+(function () {
+  'use strict';
+
+  /* ====================================================================
+     CONSTANTES
+     ==================================================================== */
+  var CM = 0.01;                    // 1 unidade da cena = 1 metro
+  var ESPESSURA_PAREDE_CM = 11;     // espessura fixa da parede
+  var PASSO_GRADE = 0.05;           // encaixe em grade de 5 cm
+  var PASSO_PLANTA = 5;             // encaixe da planta baixa (cm)
+  var LIMIAR_IMA = 0.05;            // alcance do ímã de bordas (5 cm)
+  var PROXIMIDADE_IMA = 0.3;        // só atrai itens a até 30 cm no outro eixo
+  var FUNDO_MM = 6;                 // espessura do fundo na lista de peças
+  var LIMITES = { min: 1, max: 1000, maxParede: 3000, maxElev: 1000, maxItens: 500, maxPos: 100, maxHistorico: 100,
+    maxPontos: 200, maxAberturas: 100 };
+  var CHAVE_AUTO = 'petronio3d:auto:v3';
+  var COR_COTA = 0x5fd0e8, TXT_COTA = '#5fd0e8';
+  var COR_ELEV = 0xf0b35a, TXT_ELEV = '#f0b35a';
+  var ABAS = { planta: 'Planta baixa', add: 'Adicionar', edit: 'Editar', pecas: 'Peças', arq: 'Arquivo' };
+
+  var TIPOS = {
+    parede:   { nome: 'Parede',   cor: '#b8b0a4', w: 300, h: 260, d: ESPESSURA_PAREDE_CM, elev: 0 },
+    pia:      { nome: 'Pia',      cor: '#4b5563', w: 120, h: 82,  d: 60, elev: 0 },
+    aereo:    { nome: 'Aéreo',    cor: '#d6a05b', w: 120, h: 60,  d: 35, elev: 150 },
+    roupeiro: { nome: 'Roupeiro', cor: '#8b5e3c', w: 180, h: 220, d: 60, elev: 0 },
+    custom:   { nome: 'Módulo',   cor: '#9ca3af', w: 60,  h: 80,  d: 50, elev: 0 }
+  };
+
+  var ABERTURAS = {
+    porta:  { nome: 'Porta',  larg: 80,  alt: 210, peit: 0 },
+    janela: { nome: 'Janela', larg: 120, alt: 100, peit: 110 }
+  };
+
+  /* ====================================================================
+     NÚCLEO PURO (sem DOM e sem Three.js: testável isoladamente)
+     ==================================================================== */
+  function fmt(n) { return String(Math.round(n * 10) / 10).replace('.', ','); }
+  function clamp(v, a, b) { return Math.min(b, Math.max(a, v)); }
+  function r1(v) { return Math.round(v * 10) / 10; }
+  function r3(v) { return Math.round(v * 1000) / 1000; }
+  function rad(g) { return g * Math.PI / 180; }
+  function tem(obj, k) { return typeof k === 'string' && Object.prototype.hasOwnProperty.call(obj, k); }
+
+  /* Número dentro de [a, b]; vazio/nulo/inválido vira o padrão (antes virava 0 → 1 cm). */
+  function num(v, padrao, a, b) {
+    if (v === null || v === undefined || v === '' || typeof v === 'boolean') return padrao;
+    v = Number(v);
+    return isFinite(v) ? clamp(v, a, b) : padrao;
+  }
+
+  function sanitizar(raw) {
+    // tem(): impede tipos herdados como "constructor" ou "toString" (geravam geometria NaN)
+    if (!raw || typeof raw !== 'object' || !tem(TIPOS, raw.tipo)) return null;
+    var t = TIPOS[raw.tipo], parede = raw.tipo === 'parede';
+    var nome = String(raw.nome == null ? t.nome : raw.nome).slice(0, 40);
+    if (!nome.trim()) nome = t.nome;
+    var cor = typeof raw.cor === 'string' && /^#[0-9a-f]{6}$/i.test(raw.cor) ? raw.cor : t.cor;
+    var rot = num(raw.rot, 0, -3600, 3600);
+    var s = {
+      tipo: raw.tipo,
+      nome: nome,
+      w: num(raw.w, t.w, LIMITES.min, parede ? LIMITES.maxParede : LIMITES.max),
+      h: num(raw.h, t.h, LIMITES.min, LIMITES.max),
+      d: parede ? ESPESSURA_PAREDE_CM : num(raw.d, t.d, LIMITES.min, LIMITES.max),
+      elev: num(raw.elev, t.elev, 0, LIMITES.maxElev),
+      x: num(raw.x, 0, -LIMITES.maxPos, LIMITES.maxPos),
+      z: num(raw.z, 0, -LIMITES.maxPos, LIMITES.maxPos),
+      rot: ((rot % 360) + 360) % 360,
+      cor: cor
+    };
+    if (parede && raw.planta === true) {
+      s.planta = true;                                     // parede gerada pela planta baixa
+      // cota interna: [início, fim] em cm a partir do centro da peça e o lado de dentro (+1/-1)
+      var c = raw.cota;
+      if (Array.isArray(c) && c.length === 3 && c.every(function (v) { return typeof v === 'number' && isFinite(v); })) {
+        s.cota = [clamp(c[0], -s.w / 2, s.w / 2), clamp(c[1], -s.w / 2, s.w / 2), c[2] < 0 ? -1 : 1];
+      }
+    }
+    return s;
+  }
+
+  /* Caixa do item no mundo (metros). A planta usa a pegada da caixa girada. */
+  function caixaPlanta(it, x, z) {
+    var r = rad(it.rot);
+    var c = Math.abs(Math.cos(r)), s = Math.abs(Math.sin(r));
+    var hw = (c * it.w + s * it.d) * CM / 2;
+    var hd = (s * it.w + c * it.d) * CM / 2;
+    return { minX: x - hw, maxX: x + hw, minZ: z - hd, maxZ: z + hd,
+      minY: it.elev * CM, maxY: (it.elev + it.h) * CM };
+  }
+
+  function colide(a, b) {
+    var e = 0.005;  // tolerância de 5 mm: encostar não é colidir
+    return a.minX < b.maxX - e && a.maxX > b.minX + e &&
+           a.minZ < b.maxZ - e && a.maxZ > b.minZ + e &&
+           a.minY < b.maxY - e && a.maxY > b.minY + e;
+  }
+
+  function paresColisao(lista) {
+    var cx = lista.map(function (i) { return caixaPlanta(i, i.x, i.z); });
+    var pares = [];
+    for (var a = 0; a < lista.length; a++) {
+      for (var b = a + 1; b < lista.length; b++) {
+        if (lista[a].tipo === 'parede' && lista[b].tipo === 'parede') continue;  // cantos de parede são normais
+        if (colide(cx[a], cx[b])) pares.push([lista[a], lista[b]]);
+      }
+    }
+    return pares;
+  }
+
+  /* Ímã de bordas: alinha bordas do item arrastado com bordas próximas de outros itens. */
+  function ajustarIma(it, x, z, lista) {
+    var b = caixaPlanta(it, x, z), dx = null, dz = null;
+    lista.forEach(function (o) {
+      if (o === it) return;
+      var t = caixaPlanta(o, o.x, o.z);
+      var gapZ = Math.max(b.minZ - t.maxZ, t.minZ - b.maxZ, 0);
+      var gapX = Math.max(b.minX - t.maxX, t.minX - b.maxX, 0);
+      if (gapZ <= PROXIMIDADE_IMA) {
+        [t.minX - b.minX, t.maxX - b.minX, t.minX - b.maxX, t.maxX - b.maxX].forEach(function (d) {
+          if (Math.abs(d) <= LIMIAR_IMA && (dx === null || Math.abs(d) < Math.abs(dx))) dx = d;
+        });
+      }
+      if (gapX <= PROXIMIDADE_IMA) {
+        [t.minZ - b.minZ, t.maxZ - b.minZ, t.minZ - b.maxZ, t.maxZ - b.maxZ].forEach(function (d) {
+          if (Math.abs(d) <= LIMIAR_IMA && (dz === null || Math.abs(d) < Math.abs(dz))) dz = d;
+        });
+      }
+    });
+    return { x: x + (dx || 0), z: z + (dz || 0) };
+  }
+
+  function nPortasDe(it) {
+    var n = Math.max(1, Math.round(it.w / 60));
+    if (it.tipo === 'pia') n = Math.max(2, n);
+    return clamp(n, 1, 6);
+  }
+  function temPortas(tipo) { return tipo === 'pia' || tipo === 'aereo' || tipo === 'roupeiro'; }
+
+  /* Lista de peças simplificada (mm). espMm = espessura da chapa. */
+  function pecasDoItem(it, espMm) {
+    if (it.tipo === 'parede') return [];
+    var W = it.w * 10, H = it.h * 10, D = it.d * 10, pecas = [];
+    function add(nome, qtd, a, b, esp) {
+      a = Math.round(a); b = Math.round(b);
+      if (qtd > 0 && a > 0 && b > 0) pecas.push({ nome: nome, qtd: qtd, a: a, b: b, esp: esp });
+    }
+    add('Lateral', 2, H, D, espMm);
+    add('Base e topo', 2, Math.max(W - 2 * espMm, 0), D, espMm);
+    add('Fundo', 1, W, H, FUNDO_MM);
+    if (temPortas(it.tipo)) {
+      var n = nPortasDe(it);
+      add('Porta', n, H, W / n, espMm);
+    }
+    return pecas;
+  }
+
+  function totaisPorEspessura(lista, espMm) {
+    var tot = {};
+    lista.forEach(function (it) {
+      pecasDoItem(it, espMm).forEach(function (p) {
+        tot[p.esp] = (tot[p.esp] || 0) + p.qtd * p.a * p.b / 1e6;
+      });
+    });
+    return tot;
+  }
+
+  function celulaCsv(v) {
+    var s = String(v);
+    if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;      // evita injeção de fórmulas no Excel
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+
+  function csvPecas(lista, espMm) {
+    var linhas = [['Módulo', 'Peça', 'Qtd', 'A (mm)', 'B (mm)', 'Espessura (mm)'].map(celulaCsv).join(';')];
+    lista.forEach(function (it) {
+      pecasDoItem(it, espMm).forEach(function (p) {
+        linhas.push([it.nome, p.nome, p.qtd, p.a, p.b, p.esp].map(celulaCsv).join(';'));
+      });
+    });
+    return linhas.join('\r\n');
+  }
+
+  /* ---------- planta baixa (cm; x para a direita, y para baixo = eixo Z do 3D) ----------
+     pts: cantos do ambiente em sequência; parede i liga pts[i] a pts[i+1]
+     (e o último ao primeiro quando a planta está fechada).
+     aberturas: { p: índice da parede, tipo, pos: distância do início da parede, larg, alt, peit }. */
+  function plantaVazia() { return { pts: [], fechada: false, peDireito: 260, aberturas: [] }; }
+
+  function nParedes(p) {
+    var n = p.pts.length;
+    if (n < 2) return 0;
+    return p.fechada ? n : n - 1;
+  }
+
+  function sanitizarPlanta(raw) {
+    var p = plantaVazia(), lim = LIMITES.maxParede * 4;
+    if (!raw || typeof raw !== 'object') return p;
+    if (Array.isArray(raw.pts)) {
+      raw.pts.slice(0, LIMITES.maxPontos).forEach(function (q) {
+        var x = Array.isArray(q) ? q[0] : (q && q.x), y = Array.isArray(q) ? q[1] : (q && q.y);
+        x = Number(x); y = Number(y);
+        if (isFinite(x) && isFinite(y)) p.pts.push({ x: r1(clamp(x, -lim, lim)), y: r1(clamp(y, -lim, lim)) });
+      });
+    }
+    p.fechada = raw.fechada === true && p.pts.length >= 3;
+    p.peDireito = num(raw.peDireito, 260, 50, LIMITES.max);
+    var total = nParedes(p);
+    if (Array.isArray(raw.aberturas)) {
+      raw.aberturas.slice(0, LIMITES.maxAberturas).forEach(function (a) {
+        if (!a || typeof a !== 'object' || !tem(ABERTURAS, a.tipo)) return;
+        var parede = Math.floor(Number(a.p));
+        if (!(parede >= 0 && parede < total)) return;
+        var d = ABERTURAS[a.tipo];
+        p.aberturas.push({
+          p: parede, tipo: a.tipo,
+          pos: num(a.pos, 0, 0, LIMITES.maxParede),
+          larg: num(a.larg, d.larg, 10, LIMITES.maxParede),
+          alt: num(a.alt, d.alt, 10, LIMITES.max),
+          peit: a.tipo === 'porta' ? 0 : num(a.peit, d.peit, 0, LIMITES.max)
+        });
+      });
+    }
+    return p;
+  }
+
+  function plantaDados(p) {
+    return {
+      pts: p.pts.map(function (q) { return [q.x, q.y]; }),
+      fechada: p.fechada, peDireito: p.peDireito,
+      aberturas: p.aberturas.map(function (a) {
+        return { p: a.p, tipo: a.tipo, pos: r1(a.pos), larg: a.larg, alt: a.alt, peit: a.peit };
+      })
+    };
+  }
+
+  function areaAssinada(pts) {
+    var s = 0, n = pts.length;
+    for (var i = 0; i < n; i++) {
+      var a = pts[i], b = pts[(i + 1) % n];
+      s += a.x * b.y - b.x * a.y;
+    }
+    return s / 2;
+  }
+
+  function direcao(p, i) {
+    var n = p.pts.length, A = p.pts[i], B = p.pts[(i + 1) % n];
+    var dx = B.x - A.x, dy = B.y - A.y, L = Math.hypot(dx, dy);
+    return { A: A, B: B, L: L, u: L > 1e-9 ? { x: dx / L, y: dy / L } : { x: 1, y: 0 } };
+  }
+
+  function perimetro(p) {
+    var s = 0;
+    for (var i = 0; i < nParedes(p); i++) s += direcao(p, i).L;
+    return s;
+  }
+
+  /* +1: os cantos giram no sentido horário na tela; -1: anti-horário. Define o lado "de fora". */
+  function sinalPlanta(p) { return areaAssinada(p.pts) < -1 ? -1 : 1; }
+
+  /* Quanto a parede precisa avançar além do canto para fechar a quina por fora. */
+  function extensaoCanto(u1, u2, s) {
+    var cruz = u1.x * u2.y - u1.y * u2.x;
+    if (cruz * s <= 1e-6) return 0;                  // canto para dentro: as paredes já se sobrepõem
+    var meio = Math.acos(clamp(-(u1.x * u2.x + u1.y * u2.y), -1, 1)) / 2;
+    return Math.min(ESPESSURA_PAREDE_CM / Math.tan(meio), ESPESSURA_PAREDE_CM * 3);
+  }
+
+  function geometriaParede(p, i) {
+    var w = direcao(p, i);
+    if (w.L < 0.5) return null;
+    var s = sinalPlanta(p), u = w.u, total = nParedes(p), e0 = 0, e1 = 0, viz;
+    var nrm = s > 0 ? { x: u.y, y: -u.x } : { x: -u.y, y: u.x };   // normal para fora do ambiente
+    if (p.fechada || i > 0) {
+      viz = direcao(p, (i - 1 + total) % total);
+      if (viz.L >= 0.5) e0 = extensaoCanto(viz.u, u, s);
+    }
+    if (p.fechada || i < total - 1) {
+      viz = direcao(p, (i + 1) % total);
+      if (viz.L >= 0.5) e1 = extensaoCanto(u, viz.u, s);
+    }
+    return { A: w.A, B: w.B, L: w.L, u: u, n: nrm, e0: e0, e1: e1 };
+  }
+
+  /* Aberturas da parede i já ajustadas ao comprimento e sem sobreposição. */
+  function aberturasNaParede(p, i, L) {
+    var lista = [];
+    p.aberturas.forEach(function (a, idx) {
+      if (a.p !== i) return;
+      var larg = Math.min(a.larg, L);
+      lista.push({ idx: idx, tipo: a.tipo, larg: larg, pos: clamp(a.pos, 0, L - larg), alt: a.alt, peit: a.peit });
+    });
+    lista.sort(function (a, b) { return a.pos - b.pos; });
+    var fim = 0, ok = [];
+    lista.forEach(function (a) {
+      if (a.pos < fim) a.pos = fim;
+      if (a.pos + a.larg > L + 1e-6) return;
+      ok.push(a);
+      fim = a.pos + a.larg;
+    });
+    return ok;
+  }
+
+  /* Trechos sólidos da parede i (cm ao longo da parede e na altura). */
+  function pecasParede(p, i) {
+    var g = geometriaParede(p, i);
+    if (!g) return [];
+    var H = p.peDireito, pecas = [], cursor = -g.e0;
+    aberturasNaParede(p, i, g.L).forEach(function (a) {
+      if (a.pos - cursor >= 1) pecas.push({ s0: cursor, s1: a.pos, y0: 0, y1: H, tipo: 'cheio' });
+      var base = clamp(a.peit, 0, H), topo = clamp(a.peit + a.alt, base, H);
+      if (H - topo >= 1) pecas.push({ s0: a.pos, s1: a.pos + a.larg, y0: topo, y1: H, tipo: 'sobre', ab: a.tipo });
+      if (base >= 1) pecas.push({ s0: a.pos, s1: a.pos + a.larg, y0: 0, y1: base, tipo: 'sob', ab: a.tipo });
+      cursor = a.pos + a.larg;
+    });
+    if (g.L + g.e1 - cursor >= 1) pecas.push({ s0: cursor, s1: g.L + g.e1, y0: 0, y1: H, tipo: 'cheio' });
+    return pecas.filter(function (q) { return q.s1 - q.s0 >= 1 && q.y1 - q.y0 >= 1; });
+  }
+
+  /* Converte a planta em paredes do 3D (itens do tipo parede, já posicionados e girados). */
+  function itensDaPlanta(p) {
+    var t = ESPESSURA_PAREDE_CM, itens = [], lado = sinalPlanta(p);   // lado do eixo Z local da peça que fica dentro do ambiente
+    for (var i = 0; i < nParedes(p); i++) {
+      var g = geometriaParede(p, i);
+      if (!g) continue;
+      var rot = Math.atan2(-g.u.y, g.u.x) * 180 / Math.PI, trecho = 0, base = 'Parede ' + (i + 1);
+      pecasParede(p, i).forEach(function (q) {
+        var sc = (q.s0 + q.s1) / 2;
+        var nome = base;
+        if (q.tipo === 'sobre') nome += ' · sobre ' + ABERTURAS[q.ab].nome.toLowerCase();
+        else if (q.tipo === 'sob') nome += ' · sob ' + ABERTURAS[q.ab].nome.toLowerCase();
+        else if (trecho++ > 0) nome += ' · trecho ' + trecho;
+        itens.push({
+          tipo: 'parede', planta: true, nome: nome,
+          w: r1(q.s1 - q.s0), h: r1(q.y1 - q.y0), elev: r1(q.y0),
+          x: r3((g.A.x + g.u.x * sc + g.n.x * t / 2) * CM),
+          z: r3((g.A.y + g.u.y * sc + g.n.y * t / 2) * CM),
+          rot: r1(rot), cor: TIPOS.parede.cor,
+          cota: [r1(Math.max(q.s0, 0) - sc), r1(Math.min(q.s1, g.L) - sc), lado]   // trecho visto por dentro
+        });
+      });
+    }
+    return itens;
+  }
+
+  /* Muda o comprimento da parede i.
+     Aberta: empurra os cantos seguintes (como medir com trena, parede por parede).
+     Fechada: estica o ambiente; tudo que está além do fim da parede anda junto,
+     então num retângulo a parede oposta acompanha e os ângulos retos se mantêm. */
+  function definirComprimento(p, i, novo) {
+    if (i < 0 || i >= nParedes(p) || !(novo > 0)) return false;
+    var w = direcao(p, i);
+    if (w.L < 0.5) return false;
+    var delta = novo - w.L, n = p.pts.length, ax = w.A.x, ay = w.A.y;
+    function mover(q) { q.x = r1(q.x + w.u.x * delta); q.y = r1(q.y + w.u.y * delta); }
+    if (p.fechada) {
+      p.pts.forEach(function (q, j) {
+        if (j !== i && (q.x - ax) * w.u.x + (q.y - ay) * w.u.y >= w.L - 0.5) mover(q);
+      });
+    } else {
+      for (var j = i + 1; j < n; j++) mover(p.pts[j]);
+    }
+    return true;
+  }
+
+  /* Apaga o canto k; as duas paredes vizinhas viram uma só e as portas/janelas delas
+     são reposicionadas nessa parede (se ainda couberem nela). */
+  function removerVertice(p, k) {
+    var n = p.pts.length;
+    if (k < 0 || k >= n) return false;
+    var perde = {}, mescla = p.fechada || (k > 0 && k < n - 1);
+    if (p.fechada) { perde[(k - 1 + n) % n] = true; perde[k] = true; }
+    else { if (k > 0) perde[k - 1] = true; if (k < n - 1) perde[k] = true; }
+    var A = p.pts[(k - 1 + n) % n], C = p.pts[(k + 1) % n];
+    var centros = p.aberturas.map(function (a) {
+      if (!perde[a.p]) return null;
+      var w = direcao(p, a.p), c = a.pos + a.larg / 2;
+      return { x: w.A.x + w.u.x * c, y: w.A.y + w.u.y * c };
+    });
+    p.pts.splice(k, 1);
+    if (p.fechada && p.pts.length < 3) { p.fechada = false; p.aberturas = []; return true; }
+    var nova = p.fechada && k === 0 ? p.pts.length - 1 : k - 1;
+    var dx = C.x - A.x, dy = C.y - A.y, L = Math.hypot(dx, dy), ux = L ? dx / L : 1, uy = L ? dy / L : 0;
+    var novas = [];
+    p.aberturas.forEach(function (a, idx) {
+      if (!perde[a.p]) {
+        if (a.p > k) a.p -= 1;
+        novas.push(a);
+        return;
+      }
+      var c = centros[idx];
+      if (!mescla || !c) return;
+      var t = (c.x - A.x) * ux + (c.y - A.y) * uy, fora = Math.abs((c.x - A.x) * uy - (c.y - A.y) * ux);
+      if (t < 0 || t > L || fora > 30 || a.larg > L) return;
+      a.p = nova;
+      a.pos = r1(clamp(t - a.larg / 2, 0, L - a.larg));
+      novas.push(a);
+    });
+    p.aberturas = novas;
+    return true;
+  }
+
+  function dividirParede(p, i) {
+    if (i < 0 || i >= nParedes(p) || p.pts.length >= LIMITES.maxPontos) return false;
+    var w = direcao(p, i);
+    if (w.L < 2) return false;
+    var meio = w.L / 2;
+    p.aberturas.forEach(function (a) {
+      if (a.p > i) a.p += 1;
+      else if (a.p === i && a.pos + a.larg / 2 > meio) { a.p = i + 1; a.pos = r1(Math.max(0, a.pos - meio)); }
+    });
+    p.pts.splice(i + 1, 0, { x: r1(w.A.x + w.u.x * meio), y: r1(w.A.y + w.u.y * meio) });
+    return true;
+  }
+
+  /* Fechada: abre o ambiente naquela parede. Aberta: só as paredes das pontas podem sair. */
+  function excluirParede(p, i) {
+    var n = p.pts.length, total = nParedes(p);
+    if (i < 0 || i >= total) return false;
+    if (p.fechada) {
+      var novos = [];
+      for (var k = 1; k <= n; k++) novos.push(p.pts[(i + k) % n]);
+      p.aberturas = p.aberturas.filter(function (a) { return a.p !== i; });
+      p.aberturas.forEach(function (a) { a.p = (a.p - i - 1 + n) % n; });
+      p.pts = novos;
+      p.fechada = false;
+      return true;
+    }
+    if (i === 0) return removerVertice(p, 0);
+    if (i === total - 1) return removerVertice(p, n - 1);
+    return false;
+  }
+
+  /* Endireita para 90° as paredes que estão quase retas (útil depois do AR ou de desenhar à mão). */
+  function esquadrejarPlanta(p) {
+    var n = p.pts.length;
+    if (n < 2) return false;
+    var reto = Math.PI / 2, tol = rad(10);
+    function enc(ang, base) {
+      var rel = ang - base, alvo = Math.round(rel / reto) * reto;
+      return Math.abs(rel - alvo) <= tol ? base + alvo : ang;
+    }
+    var d0 = direcao(p, 0), base = enc(Math.atan2(d0.u.y, d0.u.x), 0);
+    var novos = [{ x: p.pts[0].x, y: p.pts[0].y }];
+    for (var i = 0; i < n - 1; i++) {
+      var w = direcao(p, i), ang = enc(Math.atan2(w.u.y, w.u.x), base), q = novos[i];
+      novos.push({ x: r1(q.x + Math.cos(ang) * w.L), y: r1(q.y + Math.sin(ang) * w.L) });
+    }
+    p.pts = novos;                 // numa planta fechada, a última parede se ajusta sozinha
+    return true;
+  }
+
+  function plantaRetangular(w, d) {
+    var p = plantaVazia(), x = r1(w / 2), y = r1(d / 2);
+    p.pts = [{ x: -x, y: -y }, { x: r1(w - x), y: -y }, { x: r1(w - x), y: r1(d - y) }, { x: -x, y: r1(d - y) }];
+    p.fechada = true;
+    return p;
+  }
+
+  window.PetronioNucleo = {
+    sanitizar: sanitizar, caixaPlanta: caixaPlanta, colide: colide, paresColisao: paresColisao,
+    ajustarIma: ajustarIma, pecasDoItem: pecasDoItem, totaisPorEspessura: totaisPorEspessura,
+    csvPecas: csvPecas, celulaCsv: celulaCsv, fmt: fmt, TIPOS: TIPOS,
+    plantaVazia: plantaVazia, sanitizarPlanta: sanitizarPlanta, plantaDados: plantaDados, nParedes: nParedes,
+    areaAssinada: areaAssinada, perimetro: perimetro, geometriaParede: geometriaParede, pecasParede: pecasParede,
+    itensDaPlanta: itensDaPlanta, definirComprimento: definirComprimento, removerVertice: removerVertice,
+    dividirParede: dividirParede, excluirParede: excluirParede, esquadrejarPlanta: esquadrejarPlanta,
+    plantaRetangular: plantaRetangular
+  };
+
+  /* ====================================================================
+     ESTADO
+     ==================================================================== */
+  var state = { cotaModo: 'todas', encaixe: true, escalaTexto: 1, aba: 'add', espChapa: 15 };
+  var scene, camera, renderer, controls, raycaster, vTmp, texMadeira = null;
+  var items = [];
+  var selected = null;
+  var seq = 1;
+  var pronto = false;               // 3D carregado (a planta e as fotos funcionam mesmo sem ele)
+  var sujo = true;
+  var armazenamentoOk = true, avisouArmazenamento = false;
+  var pl = plantaVazia();           // planta baixa: faz parte do projeto e do histórico
+
+  function $(id) { return document.getElementById(id); }
+  function grade(v) { return state.encaixe ? Math.round(v / PASSO_GRADE) * PASSO_GRADE : v; }
+  function redesenhar() { sujo = true; }
+
+  var toastTimer;
+  function aviso(msg) {
+    var t = $('toast');
+    t.textContent = msg;
+    t.classList.add('on');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { t.classList.remove('on'); }, Math.min(6000, 2600 + msg.length * 25));
+  }
+
+  /* ====================================================================
+     HISTÓRICO (desfazer / refazer) e salvamento automático
+     ==================================================================== */
+  var hist = { pilha: [], refaz: [], atual: null, timer: null };
+
+  function dadosItem(i) {
+    var d = { id: i.id, tipo: i.tipo, nome: i.nome, w: i.w, h: i.h, d: i.d, elev: i.elev,
+      x: r3(i.x), z: r3(i.z), rot: i.rot, cor: i.cor };
+    if (i.planta) d.planta = true;
+    if (i.cota) d.cota = i.cota.slice();
+    return d;
+  }
+  function estadoAtual() { return JSON.stringify({ itens: items.map(dadosItem), planta: plantaDados(pl) }); }
+
+  function atualizarBotoesHist() {
+    $('b-undo').disabled = hist.pilha.length === 0;
+    $('b-redo').disabled = hist.refaz.length === 0;
+  }
+
+  function autosalvar(txt) {
+    if (!armazenamentoOk) return;
+    try {
+      localStorage.setItem(CHAVE_AUTO, txt);
+    } catch (e) {
+      armazenamentoOk = false;
+      if (!avisouArmazenamento) {
+        avisouArmazenamento = true;
+        aviso('Salvamento automático indisponível aqui. Use Exportar JSON.');
+      }
+    }
+  }
+
+  function commit() {
+    clearTimeout(hist.timer);
+    hist.timer = null;
+    var e = estadoAtual();
+    if (e === hist.atual) return;
+    if (hist.atual !== null) {
+      hist.pilha.push(hist.atual);
+      if (hist.pilha.length > LIMITES.maxHistorico) hist.pilha.shift();
+    }
+    hist.atual = e;
+    hist.refaz.length = 0;
+    autosalvar(e);
+    atualizarBotoesHist();
+  }
+
+  function agendarCommit() {
+    clearTimeout(hist.timer);
+    hist.timer = setTimeout(commit, 700);
+  }
+
+  function restaurar(txt) {
+    var dados;
+    try { dados = JSON.parse(txt); } catch (e) { aviso('Não foi possível restaurar o estado.'); return; }
+    var lista = Array.isArray(dados) ? dados : (dados && Array.isArray(dados.itens) ? dados.itens : []);
+    var selId = selected ? selected.id : null;
+    esvaziarCena();
+    var maxId = 0;
+    lista.forEach(function (raw) {
+      var s = sanitizar(raw);
+      if (!s) return;
+      var id = (typeof raw.id === 'number' && isFinite(raw.id) && raw.id > 0) ? Math.floor(raw.id) : seq++;
+      var it = Object.assign({ id: id }, s);
+      maxId = Math.max(maxId, id);
+      items.push(it);
+      construir(it);
+    });
+    seq = Math.max(seq, maxId + 1);
+    selected = items.find(function (i) { return i.id === selId; }) || null;
+    if (selected) marcarSelecao(selected);
+    if (dados && !Array.isArray(dados)) pl = sanitizarPlanta(dados.planta);
+    atualizarTudo();
+    autosalvar(txt);
+    atualizarBotoesHist();
+  }
+
+  function desfazer() {
+    if (hist.timer) commit();
+    if (!hist.pilha.length) return;
+    hist.refaz.push(hist.atual);
+    hist.atual = hist.pilha.pop();
+    restaurar(hist.atual);
+  }
+
+  function refazer() {
+    if (hist.timer) commit();
+    if (!hist.refaz.length) return;
+    hist.pilha.push(hist.atual);
+    hist.atual = hist.refaz.pop();
+    restaurar(hist.atual);
+  }
+
+  /* ====================================================================
+     CENA 3D: rótulos, cotas e móveis
+     ==================================================================== */
+  function V(x, y, z) { return new THREE.Vector3(x, y, z); }
+
+  function texturaMadeira() {
+    if (texMadeira) return texMadeira;
+    var c = document.createElement('canvas');
+    c.width = 256; c.height = 256;
+    var g = c.getContext('2d');
+    g.fillStyle = '#e9e9e9';
+    g.fillRect(0, 0, 256, 256);
+    var s = 12345;
+    function rnd() { s = (s * 1664525 + 1013904223) % 4294967296; return s / 4294967296; }
+    for (var i = 0; i < 110; i++) {
+      var x = rnd() * 256, w = 1 + rnd() * 2.5, a = 0.03 + rnd() * 0.11;
+      g.fillStyle = 'rgba(0,0,0,' + a.toFixed(3) + ')';
+      g.fillRect(x, 0, w, 256);
+    }
+    texMadeira = new THREE.CanvasTexture(c);
+    texMadeira.wrapS = texMadeira.wrapT = THREE.RepeatWrapping;
+    // (no r128 a textura não tem userData: marcar "compartilhada" ali travava ao adicionar qualquer móvel)
+    return texMadeira;
+  }
+
+  function makeLabel(texto, cor, fator) {
+    var c = document.createElement('canvas');
+    var ctx = c.getContext('2d');
+    var fs = 44;
+    var fonte = 'bold ' + fs + 'px system-ui, "Segoe UI", Arial, sans-serif';
+    ctx.font = fonte;
+    var tw = Math.ceil(ctx.measureText(texto).width);
+    c.width = tw + 36;
+    c.height = fs + 28;
+    ctx.font = fonte;                      // redimensionar o canvas zera o contexto
+    ctx.fillStyle = 'rgba(20,17,15,0.9)';
+    ctx.fillRect(0, 0, c.width, c.height);
+    ctx.strokeStyle = cor;
+    ctx.lineWidth = 5;
+    ctx.strokeRect(0, 0, c.width, c.height);
+    ctx.fillStyle = cor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(texto, c.width / 2, c.height / 2);
+    var tex = new THREE.CanvasTexture(c);
+    tex.minFilter = THREE.LinearFilter;
+    var mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, depthWrite: false });
+    var sp = new THREE.Sprite(mat);
+    sp.renderOrder = 20;
+    sp.userData.base = new THREE.Vector2(c.width / c.height, 1);
+    sp.userData.fator = fator || 1;
+    return sp;
+  }
+
+  /* Mantém o texto das cotas com tamanho constante na tela, em qualquer zoom. */
+  function ajustarRotulos() {
+    if (!pronto) return;
+    scene.updateMatrixWorld();
+    var k = state.escalaTexto * 0.034 * 0.83;
+    items.forEach(function (i) {
+      if (!i.cotas || !i.cotas.visible) return;
+      i.cotas.traverse(function (o) {
+        if (o.isSprite && o.userData.base) {
+          o.getWorldPosition(vTmp);
+          var alt = k * camera.position.distanceTo(vTmp) * (o.userData.fator || 1);
+          o.scale.set(o.userData.base.x * alt, alt, 1);
+        }
+      });
+    });
+  }
+
+  function linha(p, q, cor) {
+    var geo = new THREE.BufferGeometry().setFromPoints([p, q]);
+    var l = new THREE.Line(geo, new THREE.LineBasicMaterial({ color: cor, depthTest: false, transparent: true }));
+    l.renderOrder = 10;
+    return l;
+  }
+
+  function seta(ponta, dir, cor) {
+    var len = 0.05;
+    var m = new THREE.Mesh(new THREE.ConeGeometry(0.012, len, 8),
+      new THREE.MeshBasicMaterial({ color: cor, depthTest: false, transparent: true }));
+    m.quaternion.setFromUnitVectors(V(0, 1, 0), dir);
+    m.position.copy(ponta).addScaledVector(dir, -len / 2);
+    m.renderOrder = 10;
+    return m;
+  }
+
+  function cota(a, b, deslocamento, texto, cor, corTexto) {
+    var g = new THREE.Group();
+    var a2 = a.clone().add(deslocamento);
+    var b2 = b.clone().add(deslocamento);
+    g.add(linha(a, a2, cor));
+    g.add(linha(b, b2, cor));
+    g.add(linha(a2, b2, cor));
+    var dir = b2.clone().sub(a2).normalize();
+    g.add(seta(a2, dir.clone().negate(), cor));
+    g.add(seta(b2, dir, cor));
+    var rotulo = makeLabel(texto, corTexto, 1);
+    rotulo.position.copy(a2.clone().add(b2).multiplyScalar(0.5));
+    g.add(rotulo);
+    return g;
+  }
+
+  function construirCotas(it, w, h, d) {
+    var g = new THREE.Group();
+    var off = 0.12;
+    if (it.planta) {
+      // paredes da planta: só a medida interna, na face de dentro (a mesma da planta e da trena)
+      var c = it.cota || [-it.w / 2, it.w / 2, 1], zf = c[2] * d / 2;
+      if (c[1] - c[0] >= 1) g.add(cota(V(c[0] * CM, 0, zf), V(c[1] * CM, 0, zf), V(0, 0, c[2] * off), fmt(c[1] - c[0]) + ' cm', COR_COTA, TXT_COTA));
+      return g;
+    }
+    g.add(cota(V(-w / 2, 0, d / 2), V(w / 2, 0, d / 2), V(0, 0, off), fmt(it.w) + ' cm', COR_COTA, TXT_COTA));
+    g.add(cota(V(w / 2, 0, d / 2), V(w / 2, h, d / 2), V(off, 0, 0), fmt(it.h) + ' cm', COR_COTA, TXT_COTA));
+    g.add(cota(V(-w / 2, 0, -d / 2), V(-w / 2, 0, d / 2), V(-off, 0, 0), fmt(it.d) + ' cm', COR_COTA, TXT_COTA));
+    if (it.elev > 0) {
+      g.add(cota(V(-w / 2, -it.elev * CM, d / 2), V(-w / 2, 0, d / 2), V(-off, 0, 0),
+        'piso → base: ' + fmt(it.elev) + ' cm', COR_ELEV, TXT_ELEV));
+    }
+    var tag = makeLabel(it.nome + ': ' + fmt(it.w) + 'x' + fmt(it.h) + 'x' + fmt(it.d) + ' cm', '#f4ede4', 1.2);
+    tag.position.set(0, h + 0.2, 0);
+    g.add(tag);
+    return g;
+  }
+
+  function addFrente(g, w, h, d, n, alturaPuxador) {
+    var matFresta = new THREE.MeshStandardMaterial({ color: 0x1a1410 });
+    var matPux = new THREE.MeshStandardMaterial({ color: 0xd9d4cc, metalness: 0.7, roughness: 0.3 });
+    var dw = w / n, k, i;
+    for (k = 1; k < n; k++) {
+      var s = new THREE.Mesh(new THREE.BoxGeometry(0.004, Math.max(h - 0.03, 0.01), 0.003), matFresta);
+      s.position.set(-w / 2 + k * dw, h / 2, d / 2 + 0.0015);
+      g.add(s);
+    }
+    var yP = clamp(alturaPuxador, 0.03, Math.max(h - 0.03, 0.03));
+    for (i = 0; i < n; i++) {
+      var cx = -w / 2 + dw * (i + 0.5);
+      var lado = (i % 2 === 0) ? 1 : -1;
+      var p = new THREE.Mesh(new THREE.BoxGeometry(0.012, Math.min(0.14, h * 0.3), 0.014), matPux);
+      p.position.set(cx + lado * Math.max(dw / 2 - 0.04, 0), yP, d / 2 + 0.007);
+      g.add(p);
+    }
+  }
+
+  function decorar(g, it, w, h, d) {
+    var n = nPortasDe(it);
+    if (it.tipo === 'pia') {
+      var cuba = new THREE.Mesh(new THREE.BoxGeometry(w * 0.42, 0.004, d * 0.65),
+        new THREE.MeshStandardMaterial({ color: 0xc8c8c8, metalness: 0.8, roughness: 0.2 }));
+      cuba.position.set(0, h + 0.002, 0.02);
+      g.add(cuba);
+      var matTorn = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, metalness: 0.9, roughness: 0.2 });
+      var haste = new THREE.Mesh(new THREE.CylinderGeometry(0.014, 0.014, 0.22, 12), matTorn);
+      haste.position.set(0, h + 0.11, -d / 2 + 0.05);
+      g.add(haste);
+      var bica = new THREE.Mesh(new THREE.CylinderGeometry(0.01, 0.01, 0.14, 12), matTorn);
+      bica.rotation.x = Math.PI / 2;
+      bica.position.set(0, h + 0.22, -d / 2 + 0.12);
+      g.add(bica);
+      addFrente(g, w, h, d, n, h - 0.08);
+    } else if (it.tipo === 'aereo') {
+      addFrente(g, w, h, d, n, 0.1);
+    } else if (it.tipo === 'roupeiro') {
+      addFrente(g, w, h, d, n, h * 0.5);
+    }
+  }
+
+  function cotasVisiveis(it) {
+    return state.cotaModo === 'todas' || (state.cotaModo === 'sel' && it === selected);
+  }
+
+  function construir(it) {
+    if (!pronto) return;                 // sem 3D o item fica só como dado (e é montado quando o 3D carregar)
+    var w = it.w * CM, h = it.h * CM, d = it.d * CM;
+    var g = new THREE.Group();
+    var mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(it.cor), roughness: 0.55, emissive: 0x000000 });
+    if (it.tipo !== 'parede') mat.map = texturaMadeira();
+    var body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    body.position.y = h / 2;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    body.userData.itemId = it.id;
+    g.add(body);
+    decorar(g, it, w, h, d);
+    var cot = construirCotas(it, w, h, d);
+    g.add(cot);
+    g.position.set(it.x, it.elev * CM, it.z);
+    g.rotation.y = rad(it.rot);
+    it.group = g;
+    it.body = body;
+    it.cotas = cot;
+    it.outline = null;
+    scene.add(g);
+    cot.visible = cotasVisiveis(it);
+    if (it === selected) marcarSelecao(it);
+    redesenhar();
+  }
+
+  function descartar(it) {
+    if (!it.group) return;
+    scene.remove(it.group);
+    it.group.traverse(function (o) {
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) {
+        (Array.isArray(o.material) ? o.material : [o.material]).forEach(function (m) {
+          if (m.map && m.map !== texMadeira) m.map.dispose();      // a textura de madeira é compartilhada
+          m.dispose();
+        });
+      }
+    });
+    it.group = null; it.body = null; it.cotas = null; it.outline = null;
+    redesenhar();
+  }
+
+  function reconstruir(it) { descartar(it); construir(it); }
+
+  function esvaziarCena() {
+    selected = null;
+    items.forEach(descartar);
+    items.length = 0;
+  }
+
+  /* ---------- seleção ---------- */
+  function marcarSelecao(it) {
+    if (!it.body) return;
+    var e = new THREE.LineSegments(new THREE.EdgesGeometry(it.body.geometry),
+      new THREE.LineBasicMaterial({ color: 0xffd27a, depthTest: false, transparent: true }));
+    e.position.copy(it.body.position);
+    e.renderOrder = 9;
+    it.group.add(e);
+    it.outline = e;
+  }
+
+  function limparSelecaoVisual(it) {
+    if (it && it.outline && it.group) {
+      it.group.remove(it.outline);
+      it.outline.geometry.dispose();
+      it.outline.material.dispose();
+      it.outline = null;
+    }
+  }
+
+  function selecionar(it) {
+    it = it || null;
+    if (selected !== it) {
+      limparSelecaoVisual(selected);
+      selected = it;
+      if (selected) marcarSelecao(selected);
+      atualizarCotas();
+    }
+    atualizarInspetor();
+    atualizarLista();
+    atualizarStatus();
+  }
+
+  function atualizarCotas() {
+    items.forEach(function (i) { if (i.cotas) i.cotas.visible = cotasVisiveis(i); });
+    redesenhar();
+  }
+
+  function checarColisoes() {
+    var pares = paresColisao(items), ruins = {};
+    pares.forEach(function (p) { ruins[p[0].id] = true; ruins[p[1].id] = true; });
+    items.forEach(function (i) {
+      if (i.body) i.body.material.emissive.setHex(ruins[i.id] ? 0x7f1d1d : 0x000000);
+    });
+    return pares.map(function (p) { return p[0].nome + ' × ' + p[1].nome; });
+  }
+
+  /* ====================================================================
+     INTERFACE
+     ==================================================================== */
+  function atualizarStatus() {
+    if (state.aba === 'planta') { statusPlanta(); return; }
+    var pares = pronto ? checarColisoes() : [];
+    var txt = 'Objetos: ' + items.length;
+    if (pares.length) txt += ' · ⚠ Sobreposição: ' + pares.slice(0, 2).join('; ') + (pares.length > 2 ? '…' : '');
+    $('status').textContent = txt;
+    $('status').classList.toggle('alerta', pares.length > 0);
+    redesenhar();
+  }
+
+  function atualizarChip() {
+    var c = $('chip');
+    if (!selected || state.aba === 'planta') {
+      c.hidden = true;
+    } else {
+      c.hidden = false;
+      $('chip-nome').textContent = selected.nome;
+      $('chip-dims').textContent = fmt(selected.w) + '×' + fmt(selected.h) + '×' + fmt(selected.d) + ' cm';
+    }
+    atualizarChipPlanta();
+  }
+
+  var CAMPOS = ['i-nome', 'i-w', 'i-h', 'i-d', 'i-elev', 'i-x', 'i-z', 'i-rot', 'i-cor'];
+
+  function atualizarInspetor() {
+    var on = !!selected;
+    CAMPOS.forEach(function (id) { $(id).disabled = !on; });
+    $('sel-titulo').textContent = on ? selected.nome : 'nada';
+    atualizarChip();
+    if (!on) return;
+    $('i-nome').value = selected.nome;
+    $('i-w').value = Math.round(selected.w * 10) / 10;
+    $('i-h').value = Math.round(selected.h * 10) / 10;
+    $('i-d').value = Math.round(selected.d * 10) / 10;
+    $('i-d').disabled = selected.tipo === 'parede';
+    $('i-elev').value = Math.round(selected.elev * 10) / 10;
+    $('i-x').value = Math.round(selected.x * 100);
+    $('i-z').value = Math.round(selected.z * 100);
+    $('i-rot').value = Math.round(selected.rot);
+    $('i-cor').value = selected.cor;
+  }
+
+  function lerInspetor() {
+    if (!selected) return;
+    function n(id, atual) {
+      var v = parseFloat($(id).value);
+      return isFinite(v) ? v : atual;
+    }
+    var limpo = sanitizar({
+      tipo: selected.tipo,
+      nome: $('i-nome').value,
+      w: n('i-w', selected.w), h: n('i-h', selected.h), d: n('i-d', selected.d),
+      elev: n('i-elev', selected.elev),
+      x: n('i-x', selected.x * 100) / 100, z: n('i-z', selected.z * 100) / 100,
+      rot: n('i-rot', selected.rot),
+      cor: $('i-cor').value
+    });
+    if (!limpo) return;
+    if (limpo.w !== selected.w) delete selected.cota;    // a cota interna da planta deixa de valer
+    Object.assign(selected, limpo);
+    reconstruir(selected);
+    $('sel-titulo').textContent = selected.nome;
+    atualizarChip();
+    atualizarLista();
+    atualizarStatus();
+    agendarCommit();
+  }
+
+  function atualizarLista() {
+    var box = $('lista');
+    box.textContent = '';
+    if (!items.length) {
+      var v = document.createElement('div');
+      v.className = 'vazio';
+      v.textContent = 'Nenhum item na cena.';
+      box.appendChild(v);
+      $('resumo').textContent = '';
+    } else {
+      items.forEach(function (it) {
+        var b = document.createElement('button');
+        b.className = 'item' + (it === selected ? ' ativo' : '');
+        b.dataset.id = String(it.id);
+        var a = document.createElement('span');
+        a.textContent = it.nome;
+        var c = document.createElement('span');
+        c.textContent = fmt(it.w) + '×' + fmt(it.h) + '×' + fmt(it.d);
+        b.appendChild(a);
+        b.appendChild(c);
+        box.appendChild(b);
+      });
+      var mod = items.filter(function (i) { return i.tipo !== 'parede'; });
+      $('resumo').textContent = 'Módulos: ' + mod.length + ' · Paredes: ' + (items.length - mod.length);
+    }
+    atualizarPecas();
+  }
+
+  function atualizarPecas() {
+    var box = $('pecas-tabela');
+    box.textContent = '';
+    var e = state.espChapa;
+    var tot = totaisPorEspessura(items, e);
+    var chaves = Object.keys(tot).map(Number).sort(function (a, b) { return b - a; });
+    $('pecas-resumo').textContent = chaves.length
+      ? chaves.map(function (k) { return 'Chapa ' + k + ' mm: ' + fmt(tot[k]) + ' m²'; }).join(' · ')
+      : 'Adicione módulos para ver a lista de peças.';
+    if (!chaves.length) return;
+    var tbl = document.createElement('table');
+    var cab = document.createElement('tr');
+    ['Peça', 'Qtd', 'A × B (mm)', 'Esp.'].forEach(function (t) {
+      var th = document.createElement('th');
+      th.textContent = t;
+      cab.appendChild(th);
+    });
+    tbl.appendChild(cab);
+    items.forEach(function (it) {
+      var ps = pecasDoItem(it, e);
+      if (!ps.length) return;
+      var tr = document.createElement('tr');
+      var th = document.createElement('th');
+      th.className = 'mod-t';
+      th.colSpan = 4;
+      th.textContent = it.nome;
+      tr.appendChild(th);
+      tbl.appendChild(tr);
+      ps.forEach(function (p) {
+        var r = document.createElement('tr');
+        [p.nome, String(p.qtd), p.a + ' × ' + p.b, String(p.esp)].forEach(function (t, i) {
+          var td = document.createElement('td');
+          if (i > 0) td.className = 'n';
+          td.textContent = t;
+          r.appendChild(td);
+        });
+        tbl.appendChild(r);
+      });
+    });
+    box.appendChild(tbl);
+  }
+
+  function atualizarTudo() {
+    atualizarCotas();
+    atualizarInspetor();
+    atualizarLista();
+    atualizarStatus();
+    atualizarPlanta();
+  }
+
+  /* ---------- abas e painel ---------- */
+  function painelLargo() {
+    return typeof window.matchMedia === 'function' && window.matchMedia('(min-width: 900px) and (min-height: 541px)').matches;
+  }
+
+  function atualizarAbas() {
+    var app = $('app'), fechado = app.classList.contains('fechado'), planta = state.aba === 'planta';
+    Object.keys(ABAS).forEach(function (n) {
+      $('pane-' + n).hidden = state.aba !== n;
+      $('tab-' + n).setAttribute('aria-selected', String(state.aba === n && (!fechado || painelLargo())));
+    });
+    $('painel-titulo').textContent = ABAS[state.aba];
+    if (app.classList.contains('modo-planta') !== planta) {
+      app.classList.toggle('modo-planta', planta);
+      $('planta2d').hidden = !planta;
+      if (controls) controls.enabled = !planta;
+      if (planta) {
+        if (!pv.iniciada) { pv.iniciada = true; enquadrarPlanta(); }
+        atualizarPlanta();
+      } else {
+        pv.hover = null;
+        redesenhar();
+      }
+      atualizarChip();
+      atualizarStatus();
+    }
+  }
+
+  function abrirAba(nome) {
+    if (!ABAS[nome]) return;
+    var app = $('app');
+    if (!painelLargo() && state.aba === nome && !app.classList.contains('fechado')) {
+      app.classList.add('fechado');            // tocar de novo na aba ativa recolhe o painel
+    } else {
+      state.aba = nome;
+      app.classList.remove('fechado');
+    }
+    atualizarAbas();
+  }
+
+  /* Vai para a aba (e abre o painel) sem o comportamento de recolher do toque repetido. */
+  function irParaAba(nome) {
+    state.aba = nome;
+    $('app').classList.remove('fechado');
+    atualizarAbas();
+  }
+
+  /* ---------- ações ---------- */
+  function nomeUnico(tipo) {
+    var n = items.filter(function (i) { return i.tipo === tipo; }).length;
+    return n ? TIPOS[tipo].nome + ' ' + (n + 1) : TIPOS[tipo].nome;
+  }
+
+  function criarItem(raw, posicionarNoFoco) {
+    var limpo = sanitizar(raw);
+    if (!limpo) return null;
+    if (items.length >= LIMITES.maxItens) { aviso('Limite de ' + LIMITES.maxItens + ' itens atingido.'); return null; }
+    var it = Object.assign({ id: seq++ }, limpo);
+    if (posicionarNoFoco && controls) {
+      var t = controls.target;
+      var desloc = (items.length % 4) * 0.15;
+      it.x = r3(grade(t.x + desloc));
+      it.z = r3(grade(t.z + desloc));
+    }
+    items.push(it);
+    construir(it);
+    return it;
+  }
+
+  function valor(id, padrao) {
+    var v = parseFloat($(id).value);
+    return isFinite(v) ? v : padrao;
+  }
+
+  function adicionar(tipo) {
+    var raw = { tipo: tipo, nome: nomeUnico(tipo) };
+    if (tipo === 'parede') {
+      raw.w = valor('p-largura', TIPOS.parede.w);
+      raw.h = valor('p-altura', TIPOS.parede.h);
+    } else if (tipo === 'custom') {
+      raw.nome = $('c-nome').value || nomeUnico('custom');
+      raw.w = valor('c-w', 60); raw.h = valor('c-h', 80); raw.d = valor('c-d', 50);
+      raw.elev = valor('c-elev', 0);
+      raw.cor = $('c-cor').value;
+    }
+    var it = criarItem(raw, true);
+    if (it) { selecionar(it); commit(); }
+  }
+
+  function girar(delta) {
+    if (!selected) return;
+    selected.rot = (((selected.rot + delta) % 360) + 360) % 360;
+    if (selected.group) selected.group.rotation.y = rad(selected.rot);
+    atualizarInspetor();
+    atualizarStatus();
+    commit();
+  }
+
+  function mover(dx, dz) {
+    if (!selected) return;
+    selected.x = r3(clamp(selected.x + dx, -LIMITES.maxPos, LIMITES.maxPos));
+    selected.z = r3(clamp(selected.z + dz, -LIMITES.maxPos, LIMITES.maxPos));
+    if (selected.group) {
+      selected.group.position.x = selected.x;
+      selected.group.position.z = selected.z;
+    }
+    atualizarInspetor();
+    atualizarStatus();
+    agendarCommit();
+  }
+
+  function duplicar() {
+    if (!selected) return;
+    var s = selected;
+    var c = criarItem({ tipo: s.tipo, nome: s.nome + ' (cópia)', w: s.w, h: s.h, d: s.d, elev: s.elev,
+      x: s.x + 0.3, z: s.z + 0.3, rot: s.rot, cor: s.cor }, false);
+    if (c) { selecionar(c); commit(); }
+  }
+
+  function excluir() {
+    if (!selected) return;
+    var it = selected;
+    selected = null;
+    descartar(it);
+    items.splice(items.indexOf(it), 1);
+    atualizarTudo();
+    commit();
+  }
+
+  function limparCena() {
+    esvaziarCena();
+    atualizarTudo();
+    commit();
+  }
+
+  /* Botões destrutivos pedem um segundo toque em até 3 s. */
+  function confirmarDuplo(botao, rotulo, acaoFinal) {
+    if (botao.dataset.confirmar === '1') {
+      clearTimeout(botao._timer);
+      botao.dataset.confirmar = '';
+      botao.textContent = rotulo;
+      acaoFinal();
+      return;
+    }
+    botao.dataset.confirmar = '1';
+    botao.textContent = 'Toque de novo para confirmar';
+    botao._timer = setTimeout(function () {
+      botao.dataset.confirmar = '';
+      botao.textContent = rotulo;
+    }, 3000);
+  }
+
+  function cenaExemplo() {
+    esvaziarCena();
+    [
+      { tipo: 'parede', w: 400, h: 260, x: 0, z: -1 },
+      { tipo: 'pia', x: -1.3, z: -0.645 },
+      { tipo: 'aereo', x: -1.3, z: -0.77 },
+      { tipo: 'roupeiro', x: 0.6, z: -0.645 }
+    ].forEach(function (d) {
+      d.nome = TIPOS[d.tipo].nome;
+      criarItem(d, false);
+    });
+    atualizarTudo();
+    enquadrar();
+    commit();
+  }
+
+  /* ---------- câmera ---------- */
+  function enquadrar() {
+    if (!pronto) return;
+    var box = new THREE.Box3();
+    var n = 0;
+    items.forEach(function (i) {
+      if (i.body) {
+        i.group.updateMatrixWorld(true);
+        box.union(new THREE.Box3().setFromObject(i.body));
+        n++;
+      }
+    });
+    var c, r;
+    if (n) {
+      c = box.getCenter(new THREE.Vector3());
+      r = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 0.8);
+    } else {
+      c = V(0, 0.8, 0);
+      r = 3.5;
+    }
+    var vf = rad(camera.fov);
+    var hf = 2 * Math.atan(Math.tan(vf / 2) * camera.aspect);
+    var dist = (r / Math.sin(Math.min(vf, hf) / 2)) * 1.08;
+    var dir = camera.position.clone().sub(controls.target);
+    if (dir.lengthSq() < 1e-6) dir.set(0.6, 0.45, 0.7);
+    dir.normalize();
+    controls.target.copy(c);
+    camera.position.copy(c).addScaledVector(dir, dist);
+    camera.lookAt(c);
+    controls.update();
+    redesenhar();
+  }
+
+  var VISTAS = { persp: [0.6, 0.45, 0.7], topo: [0, 1, 0.0001], frente: [0, 0.12, 1], lateral: [1, 0.12, 0] };
+
+  function definirVista(nome) {
+    var v = VISTAS[nome];
+    if (!v) return;
+    var d = V(v[0], v[1], v[2]).normalize();
+    camera.position.copy(controls.target).addScaledVector(d, 10);
+    camera.lookAt(controls.target);
+    controls.update();
+    enquadrar();
+  }
+
+  /* ---------- arquivos ---------- */
+  function serializar() {
+    return {
+      app: 'petronio-3d', versao: 4,
+      itens: items.map(function (i) {
+        var d = dadosItem(i);
+        delete d.id;
+        return d;
+      }),
+      planta: plantaDados(pl)
+    };
+  }
+
+  function baixar(blob, nome) {
+    // no aplicativo Android o WebView não baixa arquivos: a ponte nativa grava em Downloads
+    if (window.PetronioAndroid && typeof window.PetronioAndroid.salvar === 'function') {
+      var rd = new FileReader();
+      rd.onload = function () {
+        var dados = String(rd.result);
+        aviso(window.PetronioAndroid.salvar(nome, blob.type || 'application/octet-stream', dados.slice(dados.indexOf(',') + 1)));
+      };
+      rd.onerror = function () { aviso('Não foi possível salvar o arquivo.'); };
+      rd.readAsDataURL(blob);
+      return;
+    }
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = nome;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 1500);
+  }
+
+  /* Aceita a lista antiga (v1–v3, só itens) e o formato v4 { itens, planta }. */
+  function carregarDados(dados, silencioso, semHistorico) {
+    var lista = Array.isArray(dados) ? dados : (dados && Array.isArray(dados.itens) ? dados.itens : null);
+    if (!lista) { if (!silencioso) aviso('Formato não reconhecido.'); return false; }
+    var novos = lista.slice(0, LIMITES.maxItens).map(sanitizar).filter(Boolean);
+    var planta = !Array.isArray(dados) && dados.planta ? sanitizarPlanta(dados.planta) : null;
+    if (!novos.length && !(planta && planta.pts.length)) { if (!silencioso) aviso('Nenhum item válido no arquivo.'); return false; }
+    esvaziarCena();
+    novos.forEach(function (n) {
+      var it = Object.assign({ id: seq++ }, n);
+      items.push(it);
+      construir(it);
+    });
+    if (planta) { pl = planta; pv.sel = null; pv.iniciada = false; }
+    atualizarTudo();
+    enquadrar();
+    if (state.aba === 'planta') { pv.iniciada = true; enquadrarPlanta(); }
+    if (!semHistorico) commit();
+    if (!silencioso) aviso(novos.length + ' item(ns) carregado(s)' + (planta && planta.pts.length ? ' e a planta baixa.' : '.'));
+    return true;
+  }
+
+  function importarTexto(txt) {
+    var dados;
+    try { dados = JSON.parse(txt); } catch (e) { aviso('Arquivo inválido (JSON).'); return; }
+    carregarDados(dados, false);
+  }
+
+  /* Restaura o projeto salvo e zera o histórico: antes, "Desfazer" logo ao abrir apagava o projeto restaurado. */
+  function restaurarAutosalvo() {
+    var txt = null, dados = null;
+    try { txt = localStorage.getItem(CHAVE_AUTO); } catch (e) { armazenamentoOk = false; }
+    if (txt) { try { dados = JSON.parse(txt); } catch (e) { dados = null; } }
+    if (dados && carregarDados(dados, true, true)) aviso('Projeto anterior restaurado.');
+    hist.pilha.length = 0;
+    hist.refaz.length = 0;
+    hist.atual = estadoAtual();
+    atualizarBotoesHist();
+  }
+
+  function exportarPNG() {
+    var fundo = scene.background;
+    scene.background = new THREE.Color(0x14110f);     // PNG com fundo opaco
+    ajustarRotulos();
+    renderer.render(scene, camera);
+    renderer.domElement.toBlob(function (blob) {
+      if (blob) baixar(blob, 'petronio-3d.png'); else aviso('Não foi possível gerar a imagem.');
+    }, 'image/png');
+    scene.background = fundo;
+    redesenhar();
+  }
+
+  function exportarCsv() {
+    var txt = '﻿' + csvPecas(items, state.espChapa);   // BOM para o Excel reconhecer UTF-8
+    baixar(new Blob([txt], { type: 'text/csv;charset=utf-8' }), 'petronio-lista-de-pecas.csv');
+  }
+
+  /* ---------- ponteiro no 3D: selecionar e arrastar ---------- */
+  var planoArrasto, ponteiro, pontoHit, offsetArrasto;
+  var arrastando = null, arrastoId = null;
+  var toqueVazio = null;
+  var dedos3d = {};                 // ponteiros pressionados no 3D (para não confundir pinça com arrasto)
+
+  function raioDoEvento(ev) {
+    var r = renderer.domElement.getBoundingClientRect();
+    ponteiro.set(((ev.clientX - r.left) / r.width) * 2 - 1, -((ev.clientY - r.top) / r.height) * 2 + 1);
+    raycaster.setFromCamera(ponteiro, camera);
+  }
+
+  /* Registrado na fase de captura do contêiner: roda antes do OrbitControls em qualquer navegador. */
+  function aoPressionar(ev) {
+    if (!pronto || ev.target !== renderer.domElement) return;
+    dedos3d[ev.pointerId] = true;
+    if (arrastando) { ev.stopPropagation(); return; }                       // 2º dedo durante o arrasto
+    if (Object.keys(dedos3d).length > 1) { toqueVazio = null; return; }    // pinça/giro da câmera
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return;
+    raioDoEvento(ev);
+    var alvos = items.filter(function (i) { return i.body; }).map(function (i) { return i.body; });
+    var hits = raycaster.intersectObjects(alvos, false);
+    if (!hits.length) { toqueVazio = { x: ev.clientX, y: ev.clientY, id: ev.pointerId }; return; }
+    var id = hits[0].object.userData.itemId;
+    var it = items.find(function (i) { return i.id === id; });
+    if (!it) return;
+    selecionar(it);
+    var pt = hits[0].point, olhar = camera.getWorldDirection(vTmp);
+    if (Math.abs(olhar.y) < 0.35) {
+      // câmera quase na horizontal (Frente/Lado): arrasta num plano vertical de frente para a câmera;
+      // no plano do piso o raio fica quase paralelo e o móvel "voava" para longe
+      planoArrasto.normal.set(olhar.x, 0, olhar.z).normalize();
+    } else {
+      planoArrasto.normal.set(0, 1, 0);
+    }
+    planoArrasto.constant = -planoArrasto.normal.dot(pt);
+    offsetArrasto.set(it.x - pt.x, 0, it.z - pt.z);
+    arrastando = it;
+    arrastoId = ev.pointerId;
+    controls.enabled = false;
+    try { renderer.domElement.setPointerCapture(ev.pointerId); } catch (e) { /* os eventos da janela cobrem */ }
+    ev.preventDefault();
+    ev.stopPropagation();                  // a câmera não recebe este toque
+  }
+
+  function aoMover(ev) {
+    if (!arrastando || ev.pointerId !== arrastoId) return;
+    raioDoEvento(ev);
+    if (raycaster.ray.intersectPlane(planoArrasto, pontoHit)) {
+      var x = clamp(grade(pontoHit.x + offsetArrasto.x), -LIMITES.maxPos, LIMITES.maxPos);
+      var z = clamp(grade(pontoHit.z + offsetArrasto.z), -LIMITES.maxPos, LIMITES.maxPos);
+      if (state.encaixe) {
+        var p = ajustarIma(arrastando, x, z, items);
+        x = p.x; z = p.z;
+      }
+      arrastando.x = r3(x);
+      arrastando.z = r3(z);
+      arrastando.group.position.x = arrastando.x;
+      arrastando.group.position.z = arrastando.z;
+      atualizarStatus();
+    }
+  }
+
+  function aoSoltar(ev) {
+    delete dedos3d[ev.pointerId];
+    if (arrastando && ev.pointerId === arrastoId) {
+      controls.enabled = state.aba !== 'planta';
+      try { renderer.domElement.releasePointerCapture(ev.pointerId); } catch (e) { /* já liberado */ }
+      arrastando = null;
+      arrastoId = null;
+      atualizarInspetor();
+      commit();
+    } else if (toqueVazio && toqueVazio.id === ev.pointerId) {
+      if (ev.type === 'pointerup' && Math.hypot(ev.clientX - toqueVazio.x, ev.clientY - toqueVazio.y) < 6) selecionar(null);
+      toqueVazio = null;
+    }
+  }
+
+  /* ====================================================================
+     PLANTA BAIXA (editor 2D)
+     Toque/clique: marca cantos · arrastar canto: move · arrastar no vazio: move a vista
+     pinça/roda do mouse: zoom · toque na parede: seleciona (medida, portas, janelas)
+     ==================================================================== */
+  var ESC_MIN = 0.02, ESC_MAX = 20;      // px por cm
+  var pv = { esc: 0.5, ox: 0, oy: 0, cssW: 0, cssH: 0, dpr: 1, iniciada: false, sel: null, hover: null,
+    esquadro: true, ponteiros: {}, gesto: null, pinca: null, pedido: false };
+
+  var TEMA_TELA = { fundo: '#191512', grade: 'rgba(244,237,228,0.045)', grade2: 'rgba(244,237,228,0.11)',
+    parede: '#b8b0a4', sel: '#e0a458', linha: 'rgba(244,237,228,0.55)', cota: '#5fd0e8', cotaFundo: 'rgba(20,17,15,0.9)',
+    texto: '#f4ede4', mut: '#a99d8f', movel: 'rgba(224,164,88,0.14)', movelBorda: 'rgba(224,164,88,0.7)',
+    vertice: '#f4ede4', area: 'rgba(95,208,232,0.05)', porta: '#f0b35a', janela: '#5fd0e8' };
+  var TEMA_PAPEL = { fundo: '#ffffff', grade: 'rgba(0,0,0,0.035)', grade2: 'rgba(0,0,0,0.075)',
+    parede: '#3b3530', sel: '#3b3530', linha: 'rgba(59,53,48,0.6)', cota: '#0b6e86', cotaFundo: 'rgba(255,255,255,0.92)',
+    texto: '#1f1a16', mut: '#6b6158', movel: 'rgba(139,94,60,0.10)', movelBorda: '#8b5e3c',
+    vertice: '#3b3530', area: 'rgba(11,110,134,0.04)', porta: '#8a5a12', janela: '#0b6e86' };
+
+  function validarSelPlanta() {
+    var s = pv.sel;
+    if (!s) return;
+    if ((s.t === 'v' && s.i >= pl.pts.length) || (s.t === 'p' && s.i >= nParedes(pl)) ||
+        (s.t === 'a' && s.i >= pl.aberturas.length)) pv.sel = null;
+  }
+
+  function paredeSelecionada() {
+    if (!pv.sel) return -1;
+    if (pv.sel.t === 'p') return pv.sel.i;
+    if (pv.sel.t === 'a' && pl.aberturas[pv.sel.i]) return pl.aberturas[pv.sel.i].p;
+    return -1;
+  }
+
+  function selPlanta(s) { pv.sel = s; atualizarPlanta(); }
+
+  /* Atualiza painel, chip, status e desenho depois de qualquer mudança na planta. */
+  function atualizarPlanta() {
+    validarSelPlanta();
+    atualizarPainelPlanta();
+    atualizarChipPlanta();
+    if (state.aba === 'planta') { statusPlanta(); pedirPlanta(); }
+  }
+
+  function statusPlanta() {
+    var total = nParedes(pl), st = $('status'), txt;
+    if (!pl.pts.length) txt = 'Planta: toque para marcar o 1º canto';
+    else if (!pl.fechada) txt = 'Planta: ' + total + ' parede(s) · toque no 1º canto para fechar';
+    else txt = 'Planta: ' + total + ' paredes · ' + fmt(Math.abs(areaAssinada(pl.pts)) / 1e4) + ' m²';
+    st.textContent = txt;
+    st.classList.remove('alerta');
+  }
+
+  /* ---------- vista (zoom/arraste), usada pela planta e pela foto ---------- */
+  function telaDe(q) { return { x: q.x * pv.esc + pv.ox, y: q.y * pv.esc + pv.oy }; }
+  function plantaDe(s) { return { x: (s.x - pv.ox) / pv.esc, y: (s.y - pv.oy) / pv.esc }; }
+  function posNoCanvas(ev, cv) {
+    var r = cv.getBoundingClientRect();
+    return { x: ev.clientX - r.left, y: ev.clientY - r.top };
+  }
+  function zoomVista(v, sx, sy, fator, min, max) {
+    var novo = clamp(v.esc * fator, min, max), k = novo / v.esc;
+    v.ox = sx - (sx - v.ox) * k;
+    v.oy = sy - (sy - v.oy) * k;
+    v.esc = novo;
+  }
+  function doisPonteiros(v) {
+    var ids = Object.keys(v.ponteiros), a = v.ponteiros[ids[0]], b = v.ponteiros[ids[1]];
+    return { m: { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }, d: Math.max(Math.hypot(a.x - b.x, a.y - b.y), 1) };
+  }
+  function iniciarPinca(v) {
+    var g = doisPonteiros(v);
+    v.pinca = { d0: g.d, esc0: v.esc, wx: (g.m.x - v.ox) / v.esc, wy: (g.m.y - v.oy) / v.esc };
+  }
+  function moverPinca(v, min, max) {
+    if (!v.pinca || Object.keys(v.ponteiros).length < 2) return;
+    var g = doisPonteiros(v);
+    v.esc = clamp(v.pinca.esc0 * g.d / v.pinca.d0, min, max);
+    v.ox = g.m.x - v.pinca.wx * v.esc;
+    v.oy = g.m.y - v.pinca.wy * v.esc;
+  }
+  function tolToque(ev) { return ev.pointerType === 'mouse' ? 11 : 22; }
+
+  /* ---------- desenho ---------- */
+  function dimensionarPlanta() {
+    var cv = $('planta2d'), r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    if (!r.width || !r.height) return false;
+    if (pv.cssW && (r.width !== pv.cssW || r.height !== pv.cssH)) {
+      pv.ox += (r.width - pv.cssW) / 2;          // mantém o centro em mudanças pequenas
+      pv.oy += (r.height - pv.cssH) / 2;
+      // girar o celular ou recolher o painel muda muito a área: reenquadra para caber
+      if (Math.abs(r.width / pv.cssW - 1) > 0.2 || Math.abs(r.height / pv.cssH - 1) > 0.2) pv.reenquadrar = true;
+    }
+    pv.cssW = r.width; pv.cssH = r.height; pv.dpr = dpr;
+    var w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    return true;
+  }
+
+  function pedirPlanta() {
+    if (pv.pedido || state.aba !== 'planta') return;
+    pv.pedido = true;
+    requestAnimationFrame(function () { pv.pedido = false; desenharPlanta(); });
+  }
+
+  function desenharPlanta() {
+    if (state.aba !== 'planta' || !dimensionarPlanta()) return;
+    if (pv.reenquadrar) { pv.reenquadrar = false; enquadrarPlanta(); }
+    var ctx = $('planta2d').getContext('2d');
+    ctx.setTransform(pv.dpr, 0, 0, pv.dpr, 0, 0);
+    desenharPlantaEm(ctx, { esc: pv.esc, ox: pv.ox, oy: pv.oy, w: pv.cssW, h: pv.cssH, k: 1 }, TEMA_TELA, true);
+  }
+
+  function retArred(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function textoGirado(ctx, txt, x, y, ang, cor, fundo, k, tam) {
+    if (ang > Math.PI / 2 - 1e-6 || ang < -Math.PI / 2 - 1e-6) ang += Math.PI;   // de pé; na vertical, lê de baixo para cima
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(ang);
+    ctx.font = '600 ' + (tam * k) + 'px system-ui, "Segoe UI", Arial, sans-serif';
+    var w = ctx.measureText(txt).width + 10 * k, h = (tam + 7) * k;
+    if (fundo) { ctx.fillStyle = fundo; retArred(ctx, -w / 2, -h / 2, w, h, 5 * k); ctx.fill(); }
+    ctx.fillStyle = cor;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(txt, 0, 0.5 * k);
+    ctx.restore();
+  }
+
+  function desenharPlantaEm(ctx, T, tema, interativo) {
+    var k = T.k, P = pl.pts, n = P.length, total = nParedes(pl), t = ESPESSURA_PAREDE_CM, i;
+    var selP = interativo ? paredeSelecionada() : -1;
+    function X(x) { return x * T.esc + T.ox; }
+    function Y(y) { return y * T.esc + T.oy; }
+    function ponto(g, s, r) { return { x: X(g.A.x + g.u.x * s + g.n.x * r), y: Y(g.A.y + g.u.y * s + g.n.y * r) }; }
+    function caminho(pts, fechar) {
+      ctx.beginPath();
+      pts.forEach(function (q, j) { if (j) ctx.lineTo(q.x, q.y); else ctx.moveTo(q.x, q.y); });
+      if (fechar) ctx.closePath();
+    }
+    function quad(g, s0, s1, ra, rb) { caminho([ponto(g, s0, ra), ponto(g, s1, ra), ponto(g, s1, rb), ponto(g, s0, rb)], true); }
+    function reta(a, b) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke(); }
+
+    ctx.fillStyle = tema.fundo;
+    ctx.fillRect(0, 0, T.w, T.h);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    // grade: linhas finas conforme o zoom e linhas fortes a cada metro
+    var passos = [5, 10, 25, 50, 100, 200, 500, 1000], passo = 1000;
+    for (i = 0; i < passos.length; i++) if (passos[i] * T.esc >= 14 * k) { passo = passos[i]; break; }
+    [[passo, tema.grade], [passo < 100 ? 100 : passo * 5, tema.grade2]].forEach(function (gr) {
+      var st = gr[0], x0 = Math.floor(-T.ox / T.esc / st) * st, y0 = Math.floor(-T.oy / T.esc / st) * st, v;
+      if ((T.w + T.h) / (st * T.esc) > 600) return;
+      ctx.strokeStyle = gr[1];
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      for (v = x0; X(v) <= T.w; v += st) { ctx.moveTo(Math.round(X(v)) + 0.5, 0); ctx.lineTo(Math.round(X(v)) + 0.5, T.h); }
+      for (v = y0; Y(v) <= T.h; v += st) { ctx.moveTo(0, Math.round(Y(v)) + 0.5); ctx.lineTo(T.w, Math.round(Y(v)) + 0.5); }
+      ctx.stroke();
+    });
+
+    // piso do ambiente
+    if (pl.fechada) {
+      caminho(P.map(function (q) { return { x: X(q.x), y: Y(q.y) }; }), true);
+      ctx.fillStyle = tema.area;
+      ctx.fill();
+    }
+
+    // móveis e paredes avulsas do 3D (aéreos tracejados, como nas plantas de marcenaria)
+    items.forEach(function (it) {
+      if (it.planta) return;
+      var c = Math.cos(rad(it.rot)), s = Math.sin(rad(it.rot)), hw = it.w / 2, hd = it.d / 2, cx = it.x / CM, cy = it.z / CM;
+      caminho([[-hw, -hd], [hw, -hd], [hw, hd], [-hw, hd]].map(function (q) {
+        return { x: X(cx + q[0] * c + q[1] * s), y: Y(cy - q[0] * s + q[1] * c) };
+      }), true);
+      if (it.tipo === 'parede') { ctx.fillStyle = tema.parede; ctx.fill(); return; }
+      ctx.fillStyle = tema.movel;
+      ctx.fill();
+      ctx.setLineDash(it.elev > 0 ? [6 * k, 4 * k] : []);
+      ctx.strokeStyle = tema.movelBorda;
+      ctx.lineWidth = 1.5 * k;
+      ctx.stroke();
+      ctx.setLineDash([]);
+      if (it.w * T.esc > 44 * k && it.d * T.esc > 16 * k) {
+        textoGirado(ctx, it.nome, X(cx), Y(cy), -rad(it.rot), tema.mut, null, k, 11);
+      }
+    });
+
+    // paredes: trechos cheios (portas e janelas viram vãos)
+    var geos = [];
+    for (i = 0; i < total; i++) geos.push(geometriaParede(pl, i));
+    geos.forEach(function (g, j) {
+      if (!g) return;
+      ctx.fillStyle = j === selP ? tema.sel : tema.parede;
+      pecasParede(pl, j).forEach(function (q) {
+        if (q.tipo !== 'cheio') return;
+        quad(g, q.s0, q.s1, 0, t);
+        ctx.fill();
+      });
+    });
+
+    // portas (folha + arco de abertura) e janelas
+    geos.forEach(function (g, j) {
+      if (!g) return;
+      aberturasNaParede(pl, j, g.L).forEach(function (a) {
+        var ativa = interativo && pv.sel && pv.sel.t === 'a' && pv.sel.i === a.idx;
+        ctx.strokeStyle = ativa ? tema.sel : (a.tipo === 'porta' ? tema.porta : tema.janela);
+        ctx.lineWidth = (ativa ? 2.5 : 1.5) * k;
+        reta(ponto(g, a.pos, 0), ponto(g, a.pos, t));
+        reta(ponto(g, a.pos + a.larg, 0), ponto(g, a.pos + a.larg, t));
+        if (a.tipo === 'janela') {
+          quad(g, a.pos, a.pos + a.larg, 0, t);
+          ctx.stroke();
+          reta(ponto(g, a.pos, t / 2), ponto(g, a.pos + a.larg, t / 2));
+        } else {
+          var h = ponto(g, a.pos, 0), folha = ponto(g, a.pos, -a.larg);
+          reta(h, folha);
+          var a1 = Math.atan2(-g.n.y, -g.n.x), a2 = Math.atan2(g.u.y, g.u.x), d = a2 - a1;
+          while (d > Math.PI) d -= 2 * Math.PI;
+          while (d < -Math.PI) d += 2 * Math.PI;
+          ctx.setLineDash([4 * k, 3 * k]);
+          ctx.beginPath();
+          ctx.arc(h.x, h.y, a.larg * T.esc, a1, a2, d < 0);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+        if (ativa) {         // distâncias até as pontas da parede
+          var fora = t + 16 * k / T.esc, ang = Math.atan2(g.u.y, g.u.x);
+          if (a.pos >= 1) {
+            var m1 = ponto(g, a.pos / 2, fora);
+            textoGirado(ctx, fmt(a.pos), m1.x, m1.y, ang, tema.sel, tema.cotaFundo, k, 11);
+          }
+          var resto = g.L - a.pos - a.larg;
+          if (resto >= 1) {
+            var m2 = ponto(g, a.pos + a.larg + resto / 2, fora);
+            textoGirado(ctx, fmt(resto), m2.x, m2.y, ang, tema.sel, tema.cotaFundo, k, 11);
+          }
+        }
+      });
+    });
+
+    // contorno interno (a medida que vale é a de dentro)
+    if (n >= 2) {
+      caminho(P.map(function (q) { return { x: X(q.x), y: Y(q.y) }; }), pl.fechada);
+      ctx.strokeStyle = tema.linha;
+      ctx.lineWidth = 1.25 * k;
+      ctx.stroke();
+    }
+
+    // cotas das paredes, do lado de dentro
+    geos.forEach(function (g, j) {
+      if (!g || (g.L * T.esc < 34 * k && j !== selP)) return;
+      var dentro = 15 * k / T.esc;
+      var m = ponto(g, g.L / 2, -dentro);
+      textoGirado(ctx, fmt(g.L), m.x, m.y, Math.atan2(g.u.y, g.u.x), j === selP ? tema.sel : tema.cota, tema.cotaFundo, k, 12);
+    });
+
+    // área no centro do ambiente
+    if (pl.fechada) {
+      var A = areaAssinada(P), cx = 0, cy = 0;
+      if (Math.abs(A) > 1) {
+        for (i = 0; i < n; i++) {
+          var p0 = P[i], p1 = P[(i + 1) % n], f = p0.x * p1.y - p1.x * p0.y;
+          cx += (p0.x + p1.x) * f; cy += (p0.y + p1.y) * f;
+        }
+        cx /= 6 * A; cy /= 6 * A;
+        textoGirado(ctx, fmt(Math.abs(A) / 1e4) + ' m²', X(cx), Y(cy), 0, tema.mut, null, k, 13);
+      }
+    }
+
+    if (!interativo) return;
+
+    // cantos (o primeiro fica azul enquanto o ambiente está aberto: tocar nele fecha)
+    P.forEach(function (q, j) {
+      var ativo = pv.sel && pv.sel.t === 'v' && pv.sel.i === j, primeiro = !pl.fechada && j === 0 && n >= 3;
+      ctx.beginPath();
+      ctx.arc(X(q.x), Y(q.y), (ativo || primeiro ? 7 : 5) * k, 0, 2 * Math.PI);
+      ctx.fillStyle = ativo ? tema.sel : (primeiro ? tema.cota : tema.vertice);
+      ctx.fill();
+      ctx.lineWidth = 2 * k;
+      ctx.strokeStyle = tema.fundo;
+      ctx.stroke();
+    });
+
+    // prévia do próximo canto (mouse)
+    if (pv.hover && !pl.fechada && !pv.gesto) {
+      var q = snapNovo(plantaDe(pv.hover), 11), sq = { x: X(q.x), y: Y(q.y) };
+      ctx.strokeStyle = tema.cota;
+      ctx.lineWidth = 1.5 * k;
+      if (n) {
+        var u = P[n - 1], su = { x: X(u.x), y: Y(u.y) }, L = Math.hypot(q.x - u.x, q.y - u.y);
+        ctx.setLineDash([6 * k, 4 * k]);
+        reta(su, sq);
+        ctx.setLineDash([]);
+        if (L >= 1) textoGirado(ctx, fmt(L), (su.x + sq.x) / 2, (su.y + sq.y) / 2, Math.atan2(sq.y - su.y, sq.x - su.x), tema.cota, tema.cotaFundo, k, 12);
+      }
+      ctx.beginPath();
+      ctx.arc(sq.x, sq.y, (q.fecha ? 9 : 4) * k, 0, 2 * Math.PI);
+      ctx.stroke();
+    }
+
+    if (!n) {
+      textoGirado(ctx, 'Toque ou clique para marcar o primeiro canto', T.w / 2, T.h / 2, 0, tema.mut, null, k, 13);
+    }
+  }
+
+  /* ---------- encaixes ---------- */
+  function snapNovo(q, tolPx) {
+    var P = pl.pts, n = P.length, tol = tolPx / pv.esc, passo = state.encaixe ? PASSO_PLANTA : 1;
+    var x = q.x, y = q.y, travado = null;
+    if (!pl.fechada && n >= 3 && Math.hypot(x - P[0].x, y - P[0].y) <= tol) return { x: P[0].x, y: P[0].y, fecha: true };
+    var ref = n ? P[n - 1] : null;
+    if (ref && pv.esquadro) {
+      var dx = x - ref.x, dy = y - ref.y, L = Math.hypot(dx, dy);
+      if (L > 0) {
+        var ang = Math.atan2(dy, dx), alvo = Math.round(ang / (Math.PI / 4)) * (Math.PI / 4);
+        if (Math.abs(ang - alvo) <= rad(8)) {
+          L = Math.max(passo, Math.round(L / passo) * passo);
+          x = ref.x + Math.cos(alvo) * L;
+          y = ref.y + Math.sin(alvo) * L;
+          travado = alvo;
+        }
+      }
+    }
+    if (travado === null) { x = Math.round(x / passo) * passo; y = Math.round(y / passo) * passo; }
+    if (pv.esquadro) {
+      var horiz = travado !== null && Math.abs(Math.sin(travado)) < 1e-6;
+      var vert = travado !== null && Math.abs(Math.cos(travado)) < 1e-6;
+      P.forEach(function (o, j) {
+        if (j === n - 1) return;
+        if ((travado === null || horiz) && Math.abs(x - o.x) <= tol) x = o.x;
+        if ((travado === null || vert) && Math.abs(y - o.y) <= tol) y = o.y;
+      });
+    }
+    return { x: r1(x), y: r1(y), fecha: false };
+  }
+
+  function snapArrasto(q, i, tolPx) {
+    var tol = tolPx / pv.esc, passo = state.encaixe ? PASSO_PLANTA : 1;
+    var x = Math.round(q.x / passo) * passo, y = Math.round(q.y / passo) * passo;
+    if (pv.esquadro) {
+      pl.pts.forEach(function (o, j) {
+        if (j === i) return;
+        if (Math.abs(q.x - o.x) <= tol) x = o.x;
+        if (Math.abs(q.y - o.y) <= tol) y = o.y;
+      });
+    }
+    return { x: r1(x), y: r1(y) };
+  }
+
+  /* ---------- acertos de toque ---------- */
+  function distSeg(p, a, b) {
+    var dx = b.x - a.x, dy = b.y - a.y, L2 = dx * dx + dy * dy;
+    var t = L2 ? clamp(((p.x - a.x) * dx + (p.y - a.y) * dy) / L2, 0, 1) : 0;
+    return Math.hypot(p.x - a.x - t * dx, p.y - a.y - t * dy);
+  }
+
+  function acharVertice(s, tol) {
+    var melhor = -1, md = tol;
+    pl.pts.forEach(function (q, i) {
+      var d = Math.hypot(q.x * pv.esc + pv.ox - s.x, q.y * pv.esc + pv.oy - s.y);
+      if (d <= md) { md = d; melhor = i; }
+    });
+    return melhor;
+  }
+
+  function acharParede(s, tol) {
+    var melhor = -1, md = Infinity, meio = ESPESSURA_PAREDE_CM / 2;
+    for (var i = 0; i < nParedes(pl); i++) {
+      var g = geometriaParede(pl, i);
+      if (!g) continue;
+      var a = telaDe({ x: g.A.x + g.n.x * meio, y: g.A.y + g.n.y * meio });
+      var b = telaDe({ x: g.B.x + g.n.x * meio, y: g.B.y + g.n.y * meio });
+      var d = distSeg(s, a, b) - meio * pv.esc;
+      if (d <= tol && d < md) { md = d; melhor = i; }
+    }
+    return melhor;
+  }
+
+  function acharAbertura(s, tol) {
+    var melhor = -1, md = Infinity, meio = ESPESSURA_PAREDE_CM / 2;
+    for (var i = 0; i < nParedes(pl); i++) {
+      var g = geometriaParede(pl, i);
+      if (!g) continue;
+      aberturasNaParede(pl, i, g.L).forEach(function (a) {
+        var p0 = telaDe({ x: g.A.x + g.u.x * a.pos + g.n.x * meio, y: g.A.y + g.u.y * a.pos + g.n.y * meio });
+        var p1 = telaDe({ x: g.A.x + g.u.x * (a.pos + a.larg) + g.n.x * meio, y: g.A.y + g.u.y * (a.pos + a.larg) + g.n.y * meio });
+        var d = distSeg(s, p0, p1) - meio * pv.esc;
+        if (d <= tol && d < md) { md = d; melhor = a.idx; }
+      });
+    }
+    return melhor;
+  }
+
+  /* ---------- ponteiro na planta ---------- */
+  function plPressionar(ev) {
+    var cv = $('planta2d'), p = posNoCanvas(ev, cv);
+    pv.ponteiros[ev.pointerId] = p;
+    try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* segue sem captura */ }
+    ev.preventDefault();
+    var qtd = Object.keys(pv.ponteiros).length;
+    if (qtd === 2) {
+      if (pv.gesto && pv.gesto.moveu) commit();
+      pv.gesto = null;
+      iniciarPinca(pv);
+      return;
+    }
+    if (qtd > 2) return;
+    pv.hover = null;
+    var tol = tolToque(ev);
+    if (ev.pointerType === 'mouse' && ev.button !== 0) {
+      pv.gesto = { tipo: 'pan', id: ev.pointerId, sx: p.x, sy: p.y, ox: pv.ox, oy: pv.oy };
+      return;
+    }
+    var iv = acharVertice(p, tol);
+    if (iv >= 0) { pv.gesto = { tipo: 'vertice', id: ev.pointerId, i: iv, sx: p.x, sy: p.y, moveu: false, tol: tol }; return; }
+    var ia = acharAbertura(p, tol);
+    if (ia >= 0) { pv.gesto = { tipo: 'abertura', id: ev.pointerId, i: ia, sx: p.x, sy: p.y, moveu: false }; return; }
+    pv.gesto = { tipo: 'toque', id: ev.pointerId, sx: p.x, sy: p.y, ox: pv.ox, oy: pv.oy, tol: tol };
+  }
+
+  function plMover(ev) {
+    var cv = $('planta2d'), p = posNoCanvas(ev, cv);
+    if (pv.ponteiros[ev.pointerId]) pv.ponteiros[ev.pointerId] = p;
+    if (pv.pinca) { moverPinca(pv, ESC_MIN, ESC_MAX); pedirPlanta(); return; }
+    var g = pv.gesto;
+    if (!g) {
+      if (ev.pointerType === 'mouse' && ev.target === cv) { pv.hover = p; pedirPlanta(); }
+      return;
+    }
+    if (ev.pointerId !== g.id) return;
+    var dist = Math.hypot(p.x - g.sx, p.y - g.sy);
+    if (g.tipo === 'toque' && dist > 6) g.tipo = 'pan';
+    if (g.tipo === 'pan') {
+      pv.ox = g.ox + p.x - g.sx;
+      pv.oy = g.oy + p.y - g.sy;
+      pedirPlanta();
+    } else if (g.tipo === 'vertice') {
+      if (!g.moveu && dist < 5) return;
+      if (!g.moveu) { g.moveu = true; pv.sel = { t: 'v', i: g.i }; }
+      var q = snapArrasto(plantaDe(p), g.i, 10);
+      pl.pts[g.i].x = q.x;
+      pl.pts[g.i].y = q.y;
+      statusPlanta();
+      pedirPlanta();
+    } else if (g.tipo === 'abertura') {
+      if (!g.moveu && dist < 5) return;
+      if (!g.moveu) { g.moveu = true; pv.sel = { t: 'a', i: g.i }; }
+      moverAberturaPara(g.i, plantaDe(p));
+      pedirPlanta();
+    }
+  }
+
+  function plSoltar(ev) {
+    if (!pv.ponteiros[ev.pointerId]) return;
+    delete pv.ponteiros[ev.pointerId];
+    if (pv.pinca) {
+      if (Object.keys(pv.ponteiros).length < 2) pv.pinca = null;
+      pv.gesto = null;
+      return;
+    }
+    var g = pv.gesto;
+    if (!g || ev.pointerId !== g.id) return;
+    pv.gesto = null;
+    var cancelado = ev.type === 'pointercancel';
+    if (g.tipo === 'vertice' || g.tipo === 'abertura') {
+      if (g.moveu) { commit(); atualizarPlanta(); }
+      else if (!cancelado && g.tipo === 'vertice') tocarVertice(g.i);
+      else if (!cancelado) selPlanta({ t: 'a', i: g.i });
+    } else if (g.tipo === 'toque' && !cancelado) {
+      tocarPlanta(posNoCanvas(ev, $('planta2d')), g.tol);
+    }
+  }
+
+  function plRoda(ev) {
+    ev.preventDefault();
+    var p = posNoCanvas(ev, $('planta2d'));
+    var dy = ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY;
+    zoomVista(pv, p.x, p.y, Math.exp(-dy * 0.0015), ESC_MIN, ESC_MAX);
+    pedirPlanta();
+  }
+
+  function tocarVertice(i) {
+    if (!pl.fechada && i === 0 && pl.pts.length >= 3) { fecharPlanta(); return; }
+    selPlanta({ t: 'v', i: i });
+  }
+
+  function tocarPlanta(s, tol) {
+    var w = acharParede(s, tol);
+    if (w >= 0) { selPlanta({ t: 'p', i: w }); return; }
+    if (pl.fechada) { selPlanta(null); return; }
+    adicionarPontoPlanta(snapNovo(plantaDe(s), tol));
+  }
+
+  /* ---------- edição ---------- */
+  function adicionarPontoPlanta(q) {
+    if (pl.fechada) return;
+    if (q.fecha) { fecharPlanta(); return; }
+    if (pl.pts.length >= LIMITES.maxPontos) { aviso('Limite de ' + LIMITES.maxPontos + ' cantos atingido.'); return; }
+    var u = pl.pts[pl.pts.length - 1];
+    if (u && Math.hypot(q.x - u.x, q.y - u.y) < 1) return;        // toque repetido no mesmo lugar
+    pl.pts.push({ x: q.x, y: q.y });
+    pv.sel = null;
+    commit();
+    atualizarPlanta();
+  }
+
+  function fecharPlanta() {
+    if (pl.fechada) return;
+    var P = pl.pts;
+    if (P.length >= 4 && Math.hypot(P[0].x - P[P.length - 1].x, P[0].y - P[P.length - 1].y) < 1) P.pop();
+    if (P.length < 3) { aviso('Marque pelo menos 3 cantos para fechar o ambiente.'); return; }
+    pl.fechada = true;
+    pv.sel = null;
+    commit();
+    if (!plantaVisivel()) enquadrarPlanta();
+    atualizarPlanta();
+    aviso('Ambiente fechado. Toque numa parede para ajustar a medida ou incluir portas e janelas.');
+  }
+
+  function apagarUltimoCanto() {
+    if (!pl.pts.length) return;
+    if (pl.fechada) { pl.fechada = false; pl.aberturas = pl.aberturas.filter(function (a) { return a.p < pl.pts.length - 1; }); }
+    else removerVertice(pl, pl.pts.length - 1);
+    pv.sel = null;
+    commit();
+    atualizarPlanta();
+  }
+
+  function adicionarPorMedida() {
+    if (pl.fechada) { aviso('O ambiente já está fechado. Para recomeçar, use Limpar planta.'); return; }
+    var L = valor('pl-comp', 0), ang = valor('pl-ang', 0);
+    if (!(L >= 1)) { aviso('Digite o comprimento da parede em cm.'); return; }
+    if (pl.pts.length >= LIMITES.maxPontos) { aviso('Limite de cantos atingido.'); return; }
+    L = Math.min(L, LIMITES.maxParede);
+    if (!pl.pts.length) pl.pts.push({ x: 0, y: 0 });
+    var u = pl.pts[pl.pts.length - 1], a = pl.pts[0];
+    var q = { x: r1(u.x + Math.cos(rad(ang)) * L), y: r1(u.y + Math.sin(rad(ang)) * L) };
+    var fechou = pl.pts.length >= 3 && Math.hypot(q.x - a.x, q.y - a.y) <= 2;
+    if (fechou) pl.fechada = true; else pl.pts.push(q);
+    pv.sel = { t: 'p', i: nParedes(pl) - 1 };
+    // sugere a próxima direção girando 90° (quem mede dá a volta no ambiente)
+    if (!fechou) definirDirecao((((Math.round(ang) + 90) % 360) + 360) % 360);
+    commit();
+    atualizarPlanta();
+    if (state.aba === 'planta' && (fechou || !plantaVisivel())) enquadrarPlanta();
+    if (fechou) aviso('Ambiente fechado com ' + nParedes(pl) + ' paredes.');
+  }
+
+  function plantaVisivel() {
+    return pl.pts.every(function (q) {
+      var s = telaDe(q);
+      return s.x >= 20 && s.y >= 90 && s.x <= pv.cssW - 20 && s.y <= pv.cssH - 70;
+    });
+  }
+
+  function definirDirecao(g) {
+    $('pl-ang').value = g;
+    atualizarBotoesDirecao();
+  }
+
+  function atualizarBotoesDirecao() {
+    var a = ((Math.round(valor('pl-ang', 0)) % 360) + 360) % 360;
+    document.querySelectorAll('#pl-dirs [data-dir]').forEach(function (b) {
+      b.setAttribute('aria-pressed', String(Number(b.dataset.dir) === a));
+    });
+  }
+
+  function criarRetangulo() {
+    var w = valor('pl-ret-w', 400), d = valor('pl-ret-d', 300);
+    if (!(w >= 10 && d >= 10)) { aviso('Use medidas a partir de 10 cm.'); return; }
+    var tinha = pl.pts.length > 0, pe = pl.peDireito;
+    pl = plantaRetangular(Math.min(w, LIMITES.maxParede), Math.min(d, LIMITES.maxParede));
+    pl.peDireito = pe;
+    pv.sel = null;
+    commit();
+    enquadrarPlanta();
+    atualizarPlanta();
+    if (tinha) aviso('A planta anterior foi substituída pelo retângulo. Use Desfazer para voltar.');
+  }
+
+  function moverAberturaPara(idx, q) {
+    var a = pl.aberturas[idx], g = a && geometriaParede(pl, a.p);
+    if (!g) return;
+    var s = (q.x - g.A.x) * g.u.x + (q.y - g.A.y) * g.u.y - a.larg / 2;
+    if (state.encaixe) s = Math.round(s / PASSO_PLANTA) * PASSO_PLANTA;
+    a.pos = r1(clamp(s, 0, Math.max(g.L - a.larg, 0)));
+  }
+
+  function adicionarAbertura(tipo) {
+    var i = paredeSelecionada(), g = i >= 0 ? geometriaParede(pl, i) : null;
+    if (!g) { aviso('Toque numa parede da planta primeiro.'); return; }
+    if (pl.aberturas.length >= LIMITES.maxAberturas) { aviso('Limite de portas e janelas atingido.'); return; }
+    var d = ABERTURAS[tipo], larg = r1(clamp(d.larg, 10, Math.max(10, g.L - 10)));
+    pl.aberturas.push({ p: i, tipo: tipo, pos: r1(Math.max(0, (g.L - larg) / 2)), larg: larg,
+      alt: Math.min(d.alt, pl.peDireito), peit: Math.min(d.peit, Math.max(pl.peDireito - 20, 0)) });
+    pv.sel = { t: 'a', i: pl.aberturas.length - 1 };
+    commit();
+    atualizarPlanta();
+  }
+
+  function campoAbertura(idx, campo, v) {
+    var a = pl.aberturas[idx], g = a && geometriaParede(pl, a.p);
+    if (!g || !isFinite(v)) { atualizarPainelPlanta(); return; }
+    if (campo === 'larg') { a.larg = r1(clamp(v, 10, Math.max(10, g.L))); a.pos = r1(clamp(a.pos, 0, Math.max(g.L - a.larg, 0))); }
+    else if (campo === 'pos') a.pos = r1(clamp(v, 0, Math.max(g.L - a.larg, 0)));
+    else if (campo === 'alt') a.alt = r1(clamp(v, 10, LIMITES.max));
+    else if (campo === 'peit' && a.tipo === 'janela') a.peit = r1(clamp(v, 0, LIMITES.max));
+    pv.sel = { t: 'a', i: idx };
+    commit();
+    atualizarPlanta();
+  }
+
+  function excluirSelecaoPlanta() {
+    var s = pv.sel;
+    if (!s) return;
+    if (s.t === 'v') removerVertice(pl, s.i);
+    else if (s.t === 'a') pl.aberturas.splice(s.i, 1);
+    else if (s.t === 'p' && !excluirParede(pl, s.i)) {
+      aviso('Num traçado aberto só dá para excluir as paredes das pontas. Apague um canto no lugar.');
+      return;
+    }
+    pv.sel = null;
+    commit();
+    atualizarPlanta();
+  }
+
+  function dividirSelecao() {
+    var i = pv.sel && pv.sel.t === 'p' ? pv.sel.i : -1;
+    if (i < 0) return;
+    if (!dividirParede(pl, i)) { aviso('Não foi possível dividir esta parede.'); return; }
+    pv.sel = { t: 'v', i: i + 1 };
+    commit();
+    atualizarPlanta();
+    aviso('Novo canto no meio da parede: arraste-o para formar o recorte.');
+  }
+
+  function mudarComprimento(i, v) {
+    if (!(v >= 1)) { atualizarPlanta(); return; }
+    if (definirComprimento(pl, i, Math.min(v, LIMITES.maxParede))) { pv.sel = { t: 'p', i: i }; commit(); }
+    atualizarPlanta();
+  }
+
+  function esquadrejar() {
+    if (pl.pts.length < 3) { aviso('Desenhe pelo menos duas paredes antes.'); return; }
+    esquadrejarPlanta(pl);
+    commit();
+    atualizarPlanta();
+    aviso('Ângulos próximos de 90° foram endireitados. Confira as medidas.');
+  }
+
+  function limparPlanta() {
+    var pe = pl.peDireito;
+    pl = plantaVazia();
+    pl.peDireito = pe;
+    pv.sel = null;
+    commit();
+    atualizarPlanta();
+  }
+
+  function teclaPlanta(ev, k) {
+    var s = pv.sel;
+    if (k === 'Escape') { if (s) selPlanta(null); return; }
+    if (!s) return;
+    if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); excluirSelecaoPlanta(); return; }
+    if (k.indexOf('Arrow') === 0 && s.t === 'v') {
+      ev.preventDefault();
+      var passo = ev.shiftKey ? 1 : PASSO_PLANTA, q = pl.pts[s.i];
+      if (k === 'ArrowLeft') q.x = r1(q.x - passo);
+      else if (k === 'ArrowRight') q.x = r1(q.x + passo);
+      else if (k === 'ArrowUp') q.y = r1(q.y - passo);
+      else if (k === 'ArrowDown') q.y = r1(q.y + passo);
+      agendarCommit();
+      atualizarPlanta();
+    }
+  }
+
+  function limitesPlanta() {
+    var b = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
+    function add(x, y) { b.minX = Math.min(b.minX, x); b.maxX = Math.max(b.maxX, x); b.minY = Math.min(b.minY, y); b.maxY = Math.max(b.maxY, y); }
+    pl.pts.forEach(function (q) { add(q.x, q.y); });
+    items.forEach(function (it) {
+      if (it.planta) return;
+      var R = Math.hypot(it.w, it.d) / 2;
+      add(it.x / CM - R, it.z / CM - R);
+      add(it.x / CM + R, it.z / CM + R);
+    });
+    return isFinite(b.minX) ? b : null;
+  }
+
+  function enquadrarPlanta() {
+    if (!dimensionarPlanta()) return;
+    var b = limitesPlanta() || { minX: -300, maxX: 300, minY: -300, maxY: 300 };
+    var W = pv.cssW, H = pv.cssH, topo = H < 420 ? 64 : 104, base = H < 420 ? 52 : 76, lado = 24;
+    var bw = Math.max(b.maxX - b.minX, 100) + 80, bh = Math.max(b.maxY - b.minY, 100) + 80;
+    pv.esc = clamp(Math.min((W - 2 * lado) / bw, Math.max(H - topo - base, 60) / bh), ESC_MIN, ESC_MAX);
+    pv.ox = W / 2 - (b.minX + b.maxX) / 2 * pv.esc;
+    pv.oy = topo + Math.max(H - topo - base, 60) / 2 - (b.minY + b.maxY) / 2 * pv.esc;
+    pedirPlanta();
+  }
+
+  function exportarPlantaPNG() {
+    var b = limitesPlanta();
+    if (!b) { aviso('A planta está vazia.'); return; }
+    var margem = 70, pad = 60, cab = 130;
+    var bw = b.maxX - b.minX + 2 * margem, bh = b.maxY - b.minY + 2 * margem;
+    var esc = Math.min(1900 / bw, 2400 / bh);
+    var W = Math.round(bw * esc + 2 * pad), H = Math.round(bh * esc + 2 * pad + cab);
+    var c = document.createElement('canvas');
+    c.width = W; c.height = H;
+    var ctx = c.getContext('2d');
+    desenharPlantaEm(ctx, { esc: esc, ox: pad - (b.minX - margem) * esc, oy: cab + pad - (b.minY - margem) * esc, w: W, h: H, k: 2.2 },
+      TEMA_PAPEL, false);
+    var info = 'Medidas internas em cm · pé-direito ' + fmt(pl.peDireito) + ' cm';
+    if (pl.fechada) info += ' · área ' + fmt(Math.abs(areaAssinada(pl.pts)) / 1e4) + ' m² · perímetro ' + fmt(perimetro(pl) / 100) + ' m';
+    ctx.fillStyle = TEMA_PAPEL.texto;
+    ctx.font = '700 44px system-ui, "Segoe UI", Arial, sans-serif';
+    ctx.fillText('Planta baixa · Petronio Movelaria', pad, 70);
+    ctx.fillStyle = TEMA_PAPEL.mut;
+    ctx.font = '400 24px system-ui, "Segoe UI", Arial, sans-serif';
+    ctx.fillText(info, pad, 108);
+    c.toBlob(function (blob) {
+      if (blob) baixar(blob, 'petronio-planta.png'); else aviso('Não foi possível gerar a imagem.');
+    }, 'image/png');
+  }
+
+  /* Cria as paredes do 3D a partir da planta (substitui só as que vieram da planta antes). */
+  function gerarParedes() {
+    var novos = itensDaPlanta(pl);
+    if (!novos.length) { aviso('Desenhe a planta primeiro (pelo menos uma parede).'); return; }
+    var antigos = items.filter(function (i) { return i.planta; });
+    if (novos.length > LIMITES.maxItens - (items.length - antigos.length)) { aviso('Itens demais na cena para gerar as paredes.'); return; }
+    if (selected && selected.planta) selecionar(null);
+    antigos.forEach(function (it) { descartar(it); items.splice(items.indexOf(it), 1); });
+    novos.forEach(function (raw) { criarItem(raw, false); });
+    atualizarTudo();
+    commit();
+    irParaAba('add');
+    if (pronto) camera.position.copy(controls.target).add(new THREE.Vector3(0.35, 1.1, 0.75));   // de cima: mostra o interior
+    enquadrar();
+    aviso(nParedes(pl) + ' parede(s) geradas no 3D' + (pronto ? '.' : ' (o 3D não carregou; elas aparecem quando ele abrir).'));
+  }
+
+  /* ---------- chip e painel ---------- */
+  function setaDe(u) {
+    var g = ((Math.round(Math.atan2(u.y, u.x) * 180 / Math.PI) % 360) + 360) % 360;
+    var setas = ['→', '↘', '↓', '↙', '←', '↖', '↑', '↗'], i = Math.round(g / 45) % 8;
+    return setas[i] + (g % 45 ? ' ' + g + '°' : '');
+  }
+
+  function atualizarChipPlanta() {
+    var c = $('chip-pl'), s = pv.sel;
+    if (state.aba !== 'planta' || !s) { c.hidden = true; return; }
+    var campo = $('chip-pl-campo'), inp = $('chip-pl-valor');
+    c.hidden = false;
+    $('chip-pl-dividir').hidden = s.t !== 'p';
+    campo.hidden = s.t === 'v';
+    if (s.t === 'v') {
+      var q = pl.pts[s.i];
+      $('chip-pl-nome').textContent = 'Canto ' + (s.i + 1);
+      $('chip-pl-info').textContent = 'x ' + fmt(q.x) + ' · y ' + fmt(q.y) + ' cm';
+    } else if (s.t === 'p') {
+      var w = direcao(pl, s.i), nAb = pl.aberturas.filter(function (a) { return a.p === s.i; }).length;
+      $('chip-pl-nome').textContent = 'Parede ' + (s.i + 1);
+      $('chip-pl-info').textContent = setaDe(w.u) + (nAb ? ' · ' + nAb + ' abertura(s)' : '');
+      $('chip-pl-rotulo').textContent = 'Comprimento da parede em cm';
+      if (document.activeElement !== inp) inp.value = r1(w.L);
+    } else {
+      var a = pl.aberturas[s.i];
+      $('chip-pl-nome').textContent = ABERTURAS[a.tipo].nome + ' · Parede ' + (a.p + 1);
+      $('chip-pl-info').textContent = 'altura ' + fmt(a.alt) + (a.tipo === 'janela' ? ' · peitoril ' + fmt(a.peit) : '') + ' cm';
+      $('chip-pl-rotulo').textContent = 'Largura em cm';
+      if (document.activeElement !== inp) inp.value = a.larg;
+    }
+  }
+
+  function valorChipPlanta() {
+    var s = pv.sel, v = parseFloat($('chip-pl-valor').value);
+    if (!s || !isFinite(v)) { atualizarChipPlanta(); return; }
+    if (s.t === 'p') mudarComprimento(s.i, v);
+    else if (s.t === 'a') campoAbertura(s.i, 'larg', v);
+  }
+
+  function el(tag, cls, txt) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (txt != null) e.textContent = txt;
+    return e;
+  }
+
+  function campoNumero(id, rotulo, v, attrs) {
+    var c = el('div', 'campo'), lb = el('label', null, rotulo), inp = el('input');
+    lb.htmlFor = id;
+    inp.type = 'number';
+    inp.id = id;
+    inp.inputMode = 'decimal';
+    inp.value = v;
+    Object.keys(attrs || {}).forEach(function (k) { inp.setAttribute(k, attrs[k]); });
+    c.appendChild(lb);
+    c.appendChild(inp);
+    return c;
+  }
+
+  function atualizarPainelPlanta() {
+    var total = nParedes(pl), n = pl.pts.length, selP = paredeSelecionada(), i;
+    var dica;
+    if (!n) dica = '<b>Comece pelos cantos:</b> toque na planta para marcar cada canto do ambiente, use <b>Ambiente retangular</b>, digite parede por parede com a <b>trena</b> ou <b>escaneie</b> com a câmera.';
+    else if (!pl.fechada) {
+      dica = 'Continue marcando os cantos. Toque no <b>primeiro canto</b> (azul) ou em <b>Fechar ambiente</b> para terminar.';
+      if (n >= 3) dica += ' Faltam ' + fmt(Math.hypot(pl.pts[0].x - pl.pts[n - 1].x, pl.pts[0].y - pl.pts[n - 1].y)) + ' cm para fechar.';
+    } else dica = '<b>Ambiente fechado.</b> Toque numa parede para corrigir a medida ou incluir portas e janelas. Depois toque em <b>Gerar paredes no 3D</b>.';
+    $('pl-dica').innerHTML = dica;     // só textos fixos e números
+
+    $('pl-n').textContent = String(total);
+    $('pl-area').textContent = pl.fechada ? fmt(Math.abs(areaAssinada(pl.pts)) / 1e4) + ' m²' : '–';
+    $('pl-perim').textContent = total ? fmt(perimetro(pl) / 100) + ' m' : '–';
+    $('btn-pl-ultimo').disabled = !n;
+    $('btn-pl-fechar').disabled = pl.fechada || n < 3;
+    if (document.activeElement !== $('pl-pe')) $('pl-pe').value = pl.peDireito;
+
+    // lista de paredes com a medida editável
+    var box = $('pl-lista');
+    box.textContent = '';
+    if (!total) box.appendChild(el('div', 'vazio', 'Nenhuma parede ainda.'));
+    for (i = 0; i < total; i++) {
+      var w = direcao(pl, i), nAb = pl.aberturas.filter(function (a) { return a.p === i; }).length;
+      var row = el('div', 'pl-item' + (i === selP ? ' ativo' : ''));
+      var bt = el('button', 'pl-nome', 'Parede ' + (i + 1));
+      bt.type = 'button';
+      bt.dataset.plSel = String(i);
+      var info = setaDe(w.u);
+      if (nAb) info += ' · ' + nAb + (nAb > 1 ? ' aberturas' : ' abertura');
+      if (pl.fechada && i === total - 1) info += ' · fechamento';
+      bt.appendChild(el('small', null, info));
+      var lab = el('label', 'num-cm'), inp = el('input');
+      inp.type = 'number';
+      inp.inputMode = 'decimal';
+      inp.min = '1';
+      inp.max = String(LIMITES.maxParede);
+      inp.value = r1(w.L);
+      inp.dataset.plComp = String(i);
+      inp.setAttribute('aria-label', 'Comprimento da parede ' + (i + 1) + ' em cm');
+      lab.appendChild(inp);
+      lab.appendChild(el('span', null, 'cm'));
+      row.appendChild(bt);
+      row.appendChild(lab);
+      box.appendChild(row);
+    }
+
+    // portas e janelas da parede selecionada
+    var boxAb = $('pl-aberturas');
+    boxAb.hidden = selP < 0;
+    if (selP >= 0) {
+      $('pl-ab-titulo').textContent = 'Portas e janelas · Parede ' + (selP + 1);
+      var lista = $('pl-ab-lista'), cont = { porta: 0, janela: 0 };
+      lista.textContent = '';
+      pl.aberturas.forEach(function (a, idx) {
+        if (a.p !== selP) return;
+        var card = el('div', 'ab-card' + (pv.sel && pv.sel.t === 'a' && pv.sel.i === idx ? ' ativo' : ''));
+        var topo = el('div', 'ab-topo');
+        var nome = el('button', 'pl-nome', ABERTURAS[a.tipo].nome + ' ' + (++cont[a.tipo]));
+        nome.type = 'button';
+        nome.dataset.abSel = String(idx);
+        var del = el('button', 'ib');
+        del.type = 'button';
+        del.dataset.abDel = String(idx);
+        del.setAttribute('aria-label', 'Excluir ' + ABERTURAS[a.tipo].nome.toLowerCase());
+        del.innerHTML = '<svg class="ic"><use href="#i-trash"/></svg>';
+        topo.appendChild(nome);
+        topo.appendChild(del);
+        var campos = el('div', 'campos'), pre = 'ab-' + idx + '-';
+        campos.appendChild(campoNumero(pre + 'larg', 'Largura', a.larg, { 'data-ab': idx, 'data-campo': 'larg', min: 10 }));
+        campos.appendChild(campoNumero(pre + 'alt', 'Altura', a.alt, { 'data-ab': idx, 'data-campo': 'alt', min: 10 }));
+        campos.appendChild(campoNumero(pre + 'pos', 'Do início', a.pos, { 'data-ab': idx, 'data-campo': 'pos', min: 0 }));
+        if (a.tipo === 'janela') campos.appendChild(campoNumero(pre + 'peit', 'Peitoril', a.peit, { 'data-ab': idx, 'data-campo': 'peit', min: 0 }));
+        card.appendChild(topo);
+        card.appendChild(campos);
+        lista.appendChild(card);
+      });
+      if (!lista.children.length) lista.appendChild(el('div', 'vazio', 'Nenhuma porta ou janela nesta parede. Medidas em cm; "do início" conta a partir do canto onde a parede começa.'));
+    }
+
+    atualizarListasLevantamento();
+  }
+
+  /* ====================================================================
+     ESCANEAR 1: FOTO COM MEDIDAS
+     Tira (ou escolhe) uma foto, desenha linhas de cota sobre ela e digita a medida da trena.
+     Uma linha marcada como referência (★) permite estimar as outras do mesmo plano.
+     ==================================================================== */
+  var FOTO_MAX = 2048, MAX_FOTOS = 10, MAX_LINHAS = 60;
+  var fotos = [], medidasAR = [], medidasLista = [];
+  var fv = { foto: null, esc: 1, escMin: 0.05, ox: 0, oy: 0, cssW: 0, cssH: 0, dpr: 1, ponteiros: {}, gesto: null, pinca: null,
+    sel: -1, stream: null, pedido: false, seq: 0, lupa: null };
+
+  function abrirTelaFoto(foto) {
+    $('tela-foto').hidden = false;
+    fv.foto = foto || null;
+    fv.sel = -1;
+    mostrarFotoOuVazio();
+  }
+
+  function fecharTelaFoto() {
+    pararCamera();
+    $('tela-foto').hidden = true;
+    fv.foto = null;
+    fv.ponteiros = {};
+    fv.gesto = null;
+    fv.pinca = null;
+    fv.lupa = null;
+    atualizarListasLevantamento();
+  }
+
+  function mostrarFotoOuVazio() {
+    var tem = !!fv.foto, cam = !!fv.stream;
+    $('foto-cv').hidden = !tem || cam;
+    $('foto-video').hidden = !cam;
+    $('foto-cam-barra').hidden = !cam;
+    $('foto-vazio').hidden = tem || cam;
+    $('foto-titulo').textContent = tem && !cam ? fv.foto.nome : 'Foto com medidas';
+    $('btn-foto-png').disabled = !tem || cam;
+    renderFotoLista();
+    if (tem && !cam) ajustarFoto();
+  }
+
+  function abrirCamera() {
+    if (!navigator.mediaDevices || typeof navigator.mediaDevices.getUserMedia !== 'function') {
+      aviso(window.isSecureContext
+        ? 'Câmera ao vivo indisponível neste navegador. Use "Tirar ou escolher foto".'
+        : 'A câmera ao vivo exige HTTPS. Use "Tirar ou escolher foto", que abre a câmera do celular.');
+      return;
+    }
+    navigator.mediaDevices.getUserMedia({
+      video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } }, audio: false
+    }).then(function (stream) {
+      if ($('tela-foto').hidden) { stream.getTracks().forEach(function (t) { t.stop(); }); return; }
+      pararCamera();
+      fv.stream = stream;
+      var v = $('foto-video');
+      v.srcObject = stream;
+      var tocar = v.play();
+      if (tocar && tocar.catch) tocar.catch(function () { /* alguns navegadores só tocam após outro toque */ });
+      mostrarFotoOuVazio();
+    }, function (e) {
+      aviso(e && e.name === 'NotAllowedError'
+        ? 'Permissão da câmera negada. Use "Tirar ou escolher foto".'
+        : 'Não foi possível abrir a câmera aqui. Use "Tirar ou escolher foto".');
+    });
+  }
+
+  function pararCamera() {
+    if (fv.stream) fv.stream.getTracks().forEach(function (t) { t.stop(); });
+    fv.stream = null;
+    $('foto-video').srcObject = null;
+  }
+
+  function cancelarCamera() {
+    pararCamera();
+    mostrarFotoOuVazio();
+  }
+
+  function reduzirImagem(fonte, w, h) {
+    var k = Math.min(1, FOTO_MAX / Math.max(w, h)), c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * k));
+    c.height = Math.max(1, Math.round(h * k));
+    c.getContext('2d').drawImage(fonte, 0, 0, c.width, c.height);
+    return c;
+  }
+
+  function capturarCamera() {
+    var v = $('foto-video');
+    if (!fv.stream || !v.videoWidth) { aviso('A câmera ainda está iniciando…'); return; }
+    var c = reduzirImagem(v, v.videoWidth, v.videoHeight);
+    pararCamera();
+    novaFoto(c);
+  }
+
+  function carregarArquivoFoto(f) {
+    if (!f) return;
+    if (f.type && !/^image\//.test(f.type)) { aviso('Escolha um arquivo de imagem.'); return; }
+    var url = URL.createObjectURL(f), img = new Image();
+    img.onload = function () {
+      URL.revokeObjectURL(url);
+      novaFoto(reduzirImagem(img, img.naturalWidth, img.naturalHeight));
+    };
+    img.onerror = function () {
+      URL.revokeObjectURL(url);
+      aviso('Não foi possível abrir esta imagem neste navegador.');
+    };
+    img.src = url;
+  }
+
+  function novaFoto(canvas) {
+    if (fotos.length >= MAX_FOTOS) { aviso('Limite de ' + MAX_FOTOS + ' fotos. Exclua alguma na aba Planta.'); mostrarFotoOuVazio(); return; }
+    fv.seq++;
+    var foto = { id: fv.seq, nome: 'Foto ' + fv.seq, img: canvas, w: canvas.width, h: canvas.height, linhas: [], nl: 0 };
+    fotos.push(foto);
+    fv.foto = foto;
+    fv.sel = -1;
+    mostrarFotoOuVazio();
+    atualizarListasLevantamento();
+  }
+
+  function excluirFoto(i) {
+    var f = fotos[i];
+    if (!f) return;
+    fotos.splice(i, 1);
+    if (fv.foto === f) fv.foto = null;
+    atualizarListasLevantamento();
+  }
+
+  /* ---------- vista da foto ---------- */
+  function dimensionarFoto() {
+    var cv = $('foto-cv'), r = cv.getBoundingClientRect(), dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    if (!r.width || !r.height) return false;
+    if (fv.cssW && (r.width !== fv.cssW || r.height !== fv.cssH)) {
+      fv.ox += (r.width - fv.cssW) / 2;
+      fv.oy += (r.height - fv.cssH) / 2;
+    }
+    fv.cssW = r.width; fv.cssH = r.height; fv.dpr = dpr;
+    var w = Math.round(r.width * dpr), h = Math.round(r.height * dpr);
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    return true;
+  }
+
+  function ajustarFoto() {
+    if (!fv.foto || !dimensionarFoto()) return;
+    var m = 12;
+    fv.esc = Math.max(0.01, Math.min((fv.cssW - 2 * m) / fv.foto.w, (fv.cssH - 2 * m) / fv.foto.h));
+    fv.escMin = fv.esc * 0.5;
+    fv.ox = (fv.cssW - fv.foto.w * fv.esc) / 2;
+    fv.oy = (fv.cssH - fv.foto.h * fv.esc) / 2;
+    pedirFoto();
+  }
+
+  function pedirFoto() {
+    if (fv.pedido) return;
+    fv.pedido = true;
+    requestAnimationFrame(function () { fv.pedido = false; desenharFoto(); });
+  }
+
+  function imgDe(s) { return { x: (s.x - fv.ox) / fv.esc, y: (s.y - fv.oy) / fv.esc }; }
+  function telaFoto(p) { return { x: p.x * fv.esc + fv.ox, y: p.y * fv.esc + fv.oy }; }
+  function limitarImg(p) { return { x: clamp(p.x, 0, fv.foto.w), y: clamp(p.y, 0, fv.foto.h) }; }
+  function compPx(l) { return Math.hypot(l.b.x - l.a.x, l.b.y - l.a.y); }
+
+  function escalaReferencia(foto) {
+    for (var i = 0; i < foto.linhas.length; i++) {
+      var l = foto.linhas[i];
+      if (l.ref && l.cm > 0 && compPx(l) > 1) return compPx(l) / l.cm;    // px por cm
+    }
+    return 0;
+  }
+
+  function textoLinha(l, escRef) {
+    var nome = /^Medida \d+$/.test(l.nome) || !l.nome.trim() ? '' : l.nome + ': ';
+    if (l.cm > 0) return nome + fmt(l.cm) + ' cm' + (l.ref ? ' ★' : '');
+    if (escRef) return nome + '≈ ' + fmt(compPx(l) / escRef) + ' cm';
+    return nome + '? cm';
+  }
+
+  function desenharLinhasFoto(ctx, foto, mapa, k, interativo, semTexto) {
+    var escRef = escalaReferencia(foto);
+    foto.linhas.forEach(function (l, i) {
+      var a = mapa(l.a), b = mapa(l.b), ativo = interativo && i === fv.sel;
+      var cor = ativo ? '#e0a458' : (l.ref ? '#f0b35a' : '#5fd0e8');
+      var ang = Math.atan2(b.y - a.y, b.x - a.x), nx = -Math.sin(ang), ny = Math.cos(ang), tick = 9 * k;
+      ctx.lineCap = 'round';
+      [['rgba(0,0,0,0.65)', 5.5 * k], [cor, 2.5 * k]].forEach(function (st) {   // contorno escuro: lê sobre qualquer foto
+        ctx.strokeStyle = st[0];
+        ctx.lineWidth = st[1];
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y);
+        ctx.moveTo(a.x + nx * tick, a.y + ny * tick); ctx.lineTo(a.x - nx * tick, a.y - ny * tick);
+        ctx.moveTo(b.x + nx * tick, b.y + ny * tick); ctx.lineTo(b.x - nx * tick, b.y - ny * tick);
+        ctx.stroke();
+      });
+      if (ativo) {
+        [a, b].forEach(function (q) {
+          ctx.beginPath();
+          ctx.arc(q.x, q.y, 7 * k, 0, 2 * Math.PI);
+          ctx.lineWidth = 2 * k;
+          ctx.strokeStyle = '#fff';
+          ctx.stroke();
+        });
+      }
+      if (!semTexto) textoGirado(ctx, textoLinha(l, escRef), (a.x + b.x) / 2, (a.y + b.y) / 2, ang, cor, 'rgba(20,17,15,0.88)', k, 13);
+    });
+  }
+
+  /* Lupa acima do dedo: mostra a ponta da linha que o dedo está cobrindo. */
+  function desenharLupa(ctx) {
+    var L = fv.lupa, R = 58, zoom = 2.5, e = fv.esc * zoom;
+    var cx = clamp(L.s.x, R + 8, fv.cssW - R - 8), cy = L.s.y - 110;
+    if (cy < R + 8) cy = L.s.y + 110;
+    ctx.save();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, 2 * Math.PI);
+    ctx.clip();
+    ctx.fillStyle = '#000';
+    ctx.fillRect(cx - R, cy - R, 2 * R, 2 * R);
+    ctx.drawImage(fv.foto.img, cx - L.img.x * e, cy - L.img.y * e, fv.foto.w * e, fv.foto.h * e);
+    desenharLinhasFoto(ctx, fv.foto, function (p) { return { x: cx + (p.x - L.img.x) * e, y: cy + (p.y - L.img.y) * e }; }, 1, false, true);
+    ctx.strokeStyle = '#fff';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(cx - 12, cy); ctx.lineTo(cx + 12, cy);
+    ctx.moveTo(cx, cy - 12); ctx.lineTo(cx, cy + 12);
+    ctx.stroke();
+    ctx.restore();
+    ctx.beginPath();
+    ctx.arc(cx, cy, R, 0, 2 * Math.PI);
+    ctx.lineWidth = 3;
+    ctx.strokeStyle = '#e0a458';
+    ctx.stroke();
+  }
+
+  function desenharFoto() {
+    if (!fv.foto || fv.stream || $('tela-foto').hidden || !dimensionarFoto()) return;
+    var ctx = $('foto-cv').getContext('2d');
+    ctx.setTransform(fv.dpr, 0, 0, fv.dpr, 0, 0);
+    ctx.fillStyle = '#0c0a09';
+    ctx.fillRect(0, 0, fv.cssW, fv.cssH);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(fv.foto.img, fv.ox, fv.oy, fv.foto.w * fv.esc, fv.foto.h * fv.esc);
+    desenharLinhasFoto(ctx, fv.foto, telaFoto, 1, true, false);
+    if (fv.lupa) desenharLupa(ctx);
+  }
+
+  /* ---------- ponteiro na foto ---------- */
+  function snapFoto(q, fixo) {
+    var dx = q.x - fixo.x, dy = q.y - fixo.y, t = Math.tan(rad(3));
+    if (Math.abs(dy) <= Math.abs(dx) * t) return { x: q.x, y: fixo.y };     // quase horizontal
+    if (Math.abs(dx) <= Math.abs(dy) * t) return { x: fixo.x, y: q.y };     // quase vertical
+    return q;
+  }
+
+  function acharPontaFoto(s, tol) {
+    var melhor = null, md = tol;
+    fv.foto.linhas.forEach(function (l, i) {
+      ['a', 'b'].forEach(function (pt) {
+        var q = telaFoto(l[pt]), d = Math.hypot(q.x - s.x, q.y - s.y) - (i === fv.sel ? 4 : 0);
+        if (d <= md) { md = d; melhor = { i: i, ponta: pt }; }
+      });
+    });
+    return melhor;
+  }
+
+  function acharLinhaFoto(s, tol) {
+    var melhor = -1, md = tol;
+    fv.foto.linhas.forEach(function (l, i) {
+      var d = distSeg(s, telaFoto(l.a), telaFoto(l.b));
+      if (d <= md) { md = d; melhor = i; }
+    });
+    return melhor;
+  }
+
+  function fPressionar(ev) {
+    if (!fv.foto) return;
+    var cv = $('foto-cv'), p = posNoCanvas(ev, cv);
+    fv.ponteiros[ev.pointerId] = p;
+    try { cv.setPointerCapture(ev.pointerId); } catch (e) { /* segue sem captura */ }
+    ev.preventDefault();
+    var qtd = Object.keys(fv.ponteiros).length;
+    if (qtd === 2) {
+      // o 2º dedo indica zoom: descarta a linha que o 1º dedo acabou de começar
+      if (fv.gesto && fv.gesto.tipo === 'nova' && fv.gesto.criada) { fv.foto.linhas.pop(); fv.sel = -1; renderFotoLista(); }
+      fv.gesto = null;
+      fv.lupa = null;
+      iniciarPinca(fv);
+      pedirFoto();
+      return;
+    }
+    if (qtd > 2) return;
+    if (ev.pointerType === 'mouse' && ev.button !== 0) {
+      fv.gesto = { tipo: 'pan', id: ev.pointerId, sx: p.x, sy: p.y, ox: fv.ox, oy: fv.oy };
+      return;
+    }
+    var tol = tolToque(ev) + 2, toque = ev.pointerType !== 'mouse';
+    var h = acharPontaFoto(p, tol);
+    if (h) {
+      fv.sel = h.i;
+      fv.gesto = { tipo: 'ponta', id: ev.pointerId, i: h.i, ponta: h.ponta, toque: toque, sx: p.x, sy: p.y };
+      marcarLinhaAtiva();
+      pedirFoto();
+      return;
+    }
+    var li = acharLinhaFoto(p, Math.max(tol - 6, 8));
+    if (li >= 0) { fv.gesto = { tipo: 'linha', id: ev.pointerId, i: li, sx: p.x, sy: p.y, ox: fv.ox, oy: fv.oy }; return; }
+    fv.gesto = { tipo: 'nova', id: ev.pointerId, a: limitarImg(imgDe(p)), sx: p.x, sy: p.y, criada: false, toque: toque };
+  }
+
+  function fMover(ev) {
+    if (!fv.foto) return;
+    var p = posNoCanvas(ev, $('foto-cv'));
+    if (fv.ponteiros[ev.pointerId]) fv.ponteiros[ev.pointerId] = p;
+    if (fv.pinca) { moverPinca(fv, fv.escMin, 8); pedirFoto(); return; }
+    var g = fv.gesto;
+    if (!g || ev.pointerId !== g.id) return;
+    var dist = Math.hypot(p.x - g.sx, p.y - g.sy);
+    if (g.tipo === 'linha' && dist > 6) g.tipo = 'pan';
+    if (g.tipo === 'pan') {
+      fv.ox = g.ox + p.x - g.sx;
+      fv.oy = g.oy + p.y - g.sy;
+      pedirFoto();
+      return;
+    }
+    if (g.tipo === 'nova' && !g.criada) {
+      if (dist < 8) return;
+      if (fv.foto.linhas.length >= MAX_LINHAS) { aviso('Limite de ' + MAX_LINHAS + ' linhas por foto.'); fv.gesto = null; return; }
+      fv.foto.nl++;
+      fv.foto.linhas.push({ a: g.a, b: { x: g.a.x, y: g.a.y }, nome: 'Medida ' + fv.foto.nl, cm: null, ref: false });
+      g.criada = true;
+      g.i = fv.foto.linhas.length - 1;
+      g.ponta = 'b';
+      fv.sel = g.i;
+    }
+    if (g.tipo === 'nova' || g.tipo === 'ponta') {
+      var l = fv.foto.linhas[g.i], q = snapFoto(limitarImg(imgDe(p)), g.ponta === 'a' ? l.b : l.a);
+      l[g.ponta] = q;
+      fv.lupa = g.toque ? { s: telaFoto(q), img: q } : null;
+      pedirFoto();
+    }
+  }
+
+  function fSoltar(ev) {
+    if (!fv.ponteiros[ev.pointerId]) return;
+    delete fv.ponteiros[ev.pointerId];
+    if (fv.pinca) {
+      if (Object.keys(fv.ponteiros).length < 2) fv.pinca = null;
+      fv.gesto = null;
+      return;
+    }
+    var g = fv.gesto;
+    if (!g || ev.pointerId !== g.id) return;
+    fv.gesto = null;
+    fv.lupa = null;
+    if (g.tipo === 'nova' && g.criada) {
+      if (compPx(fv.foto.linhas[g.i]) * fv.esc < 8) { fv.foto.linhas.splice(g.i, 1); fv.sel = -1; renderFotoLista(); }
+      else { renderFotoLista(); focarMedida(g.i); }
+    } else if (g.tipo === 'nova' || g.tipo === 'linha') {
+      fv.sel = g.tipo === 'linha' ? g.i : -1;
+      marcarLinhaAtiva();
+    } else if (g.tipo === 'ponta') {
+      atualizarEstimativas();
+    }
+    pedirFoto();
+  }
+
+  function fRoda(ev) {
+    if (!fv.foto) return;
+    ev.preventDefault();
+    var p = posNoCanvas(ev, $('foto-cv'));
+    var dy = ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY;
+    zoomVista(fv, p.x, p.y, Math.exp(-dy * 0.0015), fv.escMin, 8);
+    pedirFoto();
+  }
+
+  /* ---------- lista de linhas da foto ---------- */
+  function renderFotoLista() {
+    var box = $('foto-linhas'), f = fv.foto;
+    box.textContent = '';
+    $('foto-dica').textContent = !f
+      ? 'Tire ou escolha uma foto para começar.'
+      : (f.linhas.length
+        ? 'Digite a medida da trena em cada linha. Arraste as pontas para ajustar; dois dedos dão zoom.'
+        : 'Arraste o dedo sobre a foto para criar uma linha de medida. Dois dedos movem e dão zoom.');
+    if (!f) return;
+    var escRef = escalaReferencia(f);
+    f.linhas.forEach(function (l, i) {
+      var row = el('div', 'fl-item' + (i === fv.sel ? ' ativo' : ''));
+      row.dataset.flLinha = String(i);
+      var nome = el('input', 'fl-nome');
+      nome.type = 'text';
+      nome.maxLength = 40;
+      nome.value = l.nome;
+      nome.dataset.flNome = String(i);
+      nome.setAttribute('aria-label', 'Nome da linha ' + (i + 1));
+      var cm = el('input', 'fl-cm');
+      cm.type = 'number';
+      cm.inputMode = 'decimal';
+      cm.min = '0';
+      cm.value = l.cm > 0 ? l.cm : '';
+      cm.placeholder = escRef && !(l.cm > 0) ? '≈' + fmt(compPx(l) / escRef) : 'medida';
+      cm.dataset.flCm = String(i);
+      cm.setAttribute('aria-label', 'Medida da linha ' + (i + 1) + ' em cm');
+      var ref = el('button', 'ib');
+      ref.type = 'button';
+      ref.dataset.flRef = String(i);
+      ref.title = 'Referência de escala';
+      ref.setAttribute('aria-label', 'Usar como referência de escala');
+      ref.setAttribute('aria-pressed', String(!!l.ref));
+      ref.innerHTML = '<svg class="ic"><use href="#i-star"/></svg>';
+      var del = el('button', 'ib');
+      del.type = 'button';
+      del.dataset.flDel = String(i);
+      del.setAttribute('aria-label', 'Excluir linha');
+      del.innerHTML = '<svg class="ic"><use href="#i-trash"/></svg>';
+      row.appendChild(nome);
+      row.appendChild(cm);
+      row.appendChild(el('span', 'fl-un', 'cm'));
+      row.appendChild(ref);
+      row.appendChild(del);
+      box.appendChild(row);
+    });
+  }
+
+  function marcarLinhaAtiva() {
+    document.querySelectorAll('#foto-linhas .fl-item').forEach(function (r) {
+      r.classList.toggle('ativo', Number(r.dataset.flLinha) === fv.sel);
+    });
+  }
+
+  /* Atualiza só as estimativas (≈) sem recriar a lista: não tira o foco do campo que está sendo digitado. */
+  function atualizarEstimativas() {
+    var f = fv.foto;
+    if (!f) return;
+    var escRef = escalaReferencia(f);
+    document.querySelectorAll('#foto-linhas [data-fl-cm]').forEach(function (inp) {
+      var l = f.linhas[Number(inp.dataset.flCm)];
+      if (l) inp.placeholder = escRef && !(l.cm > 0) ? '≈' + fmt(compPx(l) / escRef) : 'medida';
+    });
+    document.querySelectorAll('#foto-linhas [data-fl-ref]').forEach(function (b) {
+      var l = f.linhas[Number(b.dataset.flRef)];
+      if (l) b.setAttribute('aria-pressed', String(!!l.ref));
+    });
+  }
+
+  function focarMedida(i) {
+    var inp = document.querySelector('#foto-linhas [data-fl-cm="' + i + '"]');
+    if (!inp) return;
+    try { inp.focus({ preventScroll: false }); } catch (e) { inp.focus(); }
+    if (inp.scrollIntoView) inp.scrollIntoView({ block: 'nearest' });
+  }
+
+  function exportarFotoImagem() {
+    var f = fv.foto;
+    if (!f) return;
+    var c = document.createElement('canvas');
+    c.width = f.w;
+    c.height = f.h;
+    var ctx = c.getContext('2d'), k = Math.max(f.w, f.h) / 900;
+    ctx.drawImage(f.img, 0, 0);
+    desenharLinhasFoto(ctx, f, function (p) { return p; }, k, false, false);
+    var txt = 'Petronio Movelaria · ' + f.nome + ' · medidas em cm';
+    ctx.font = '600 ' + (13 * k) + 'px system-ui, "Segoe UI", Arial, sans-serif';
+    var w = ctx.measureText(txt).width + 20 * k, h = 26 * k;
+    ctx.fillStyle = 'rgba(20,17,15,0.85)';
+    retArred(ctx, 10 * k, f.h - h - 10 * k, w, h, 6 * k);
+    ctx.fill();
+    ctx.fillStyle = '#f4ede4';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(txt, 20 * k, f.h - h / 2 - 10 * k);
+    c.toBlob(function (blob) {
+      if (blob) baixar(blob, 'petronio-' + f.nome.toLowerCase().replace(/\s+/g, '-') + '-medidas.jpg');
+      else aviso('Não foi possível gerar a imagem.');
+    }, 'image/jpeg', 0.92);
+  }
+
+  function teclaFoto(ev, k) {
+    if (k === 'Escape') { if (fv.sel >= 0) { fv.sel = -1; marcarLinhaAtiva(); pedirFoto(); } else fecharTelaFoto(); return; }
+    if ((k === 'Delete' || k === 'Backspace') && fv.foto && fv.sel >= 0) {
+      ev.preventDefault();
+      fv.foto.linhas.splice(fv.sel, 1);
+      fv.sel = -1;
+      renderFotoLista();
+      pedirFoto();
+    }
+  }
+
+  /* ---------- medidas coletadas (fotos + AR) na aba Planta ---------- */
+  function coletarMedidas() {
+    var lista = [];
+    fotos.forEach(function (f) {
+      f.linhas.forEach(function (l) { if (l.cm > 0) lista.push({ nome: l.nome, cm: l.cm, origem: f.nome }); });
+    });
+    medidasAR.forEach(function (m) { lista.push({ nome: m.nome, cm: m.cm, origem: 'Trena AR' }); });
+    return lista;
+  }
+
+  function botaoIcone(icone, rotulo, dados) {
+    var b = el('button', 'ib');
+    b.type = 'button';
+    b.setAttribute('aria-label', rotulo);
+    b.title = rotulo;
+    Object.keys(dados).forEach(function (k) { b.dataset[k] = dados[k]; });
+    b.innerHTML = '<svg class="ic"><use href="#' + icone + '"/></svg>';
+    return b;
+  }
+
+  function atualizarListasLevantamento() {
+    var bf = $('pl-fotos'), bm = $('pl-medidas');
+    bf.textContent = '';
+    bf.hidden = !fotos.length;
+    if (fotos.length) {
+      bf.appendChild(el('div', 'sec-titulo', 'Fotos do levantamento'));
+      var lf = el('div', 'pl-lista');
+      fotos.forEach(function (f, i) {
+        var row = el('div', 'pl-item'), bt = el('button', 'pl-nome', f.nome);
+        bt.type = 'button';
+        bt.dataset.fotoAbrir = String(i);
+        var comMedida = f.linhas.filter(function (l) { return l.cm > 0; }).length;
+        bt.appendChild(el('small', null, f.linhas.length + ' linha(s) · ' + comMedida + ' com medida · toque para abrir'));
+        row.appendChild(bt);
+        row.appendChild(botaoIcone('i-trash', 'Excluir ' + f.nome, { fotoDel: String(i) }));
+        lf.appendChild(row);
+      });
+      bf.appendChild(lf);
+    }
+
+    medidasLista = coletarMedidas();
+    bm.textContent = '';
+    bm.hidden = !medidasLista.length;
+    if (!medidasLista.length) return;
+    bm.appendChild(el('div', 'sec-titulo', 'Medidas coletadas'));
+    var lm = el('div', 'pl-lista'), total = nParedes(pl);
+    medidasLista.forEach(function (m, i) {
+      var row = el('div', 'pl-item'), nome = el('div', 'pl-nome', m.nome);
+      nome.appendChild(el('small', null, m.origem));
+      var sel = el('select', 'pl-sel');
+      sel.dataset.med = String(i);
+      sel.setAttribute('aria-label', 'Usar ' + m.nome + ' em');
+      [['', 'Usar em…'], ['pe', 'Pé-direito']].forEach(function (o) { sel.appendChild(new Option(o[1], o[0])); });
+      for (var j = 0; j < total; j++) sel.appendChild(new Option('Parede ' + (j + 1) + ' (' + fmt(direcao(pl, j).L) + ')', 'p:' + j));
+      row.appendChild(nome);
+      row.appendChild(el('span', 'med-valor', fmt(m.cm) + ' cm'));
+      row.appendChild(sel);
+      lm.appendChild(row);
+    });
+    bm.appendChild(lm);
+  }
+
+  function usarMedida(i, destino) {
+    var m = medidasLista[i];
+    if (!m || !destino) return;
+    if (destino === 'pe') {
+      pl.peDireito = r1(clamp(m.cm, 50, LIMITES.max));
+      commit();
+      atualizarPlanta();
+      aviso('Pé-direito: ' + fmt(pl.peDireito) + ' cm.');
+      return;
+    }
+    var j = Number(destino.slice(2));
+    mudarComprimento(j, m.cm);
+    aviso('Parede ' + (j + 1) + ' agora mede ' + fmt(m.cm) + ' cm.');
+  }
+
+  /* ====================================================================
+     ESCANEAR 2: MEDIÇÃO EM AR (WebXR)
+     Chrome no Android com ARCore. Marca os cantos no piso e gera a planta;
+     o modo Trena mede distâncias soltas (pé-direito, vãos, janelas).
+     ==================================================================== */
+  var RETORNO_APP = /[?&]retorno=app(&|$)/.test(location.search);   // aberto pelo aplicativo Android
+  var CHAVE_URL_AR = 'petronio3d:urlAR';
+  var retornoDados = { pts: [], medidas: [] };
+
+  function lerUrlAR() {
+    try { return localStorage.getItem(CHAVE_URL_AR) || ''; } catch (e) { return ''; }
+  }
+  function salvarUrlAR(url) {
+    try { localStorage.setItem(CHAVE_URL_AR, url); } catch (e) { /* fica só nesta sessão */ }
+  }
+
+  var ar = { suportado: false, motivo: '', sessao: null, renderer: null, cena: null, camera: null, retic: null,
+    fonte: null, alvo: null, temAlvo: false, modo: 'cantos', pontos: [], trena: null, grupo: null, viva: null,
+    descartar: false, textoVivo: '' };
+
+  function verificarAR() {
+    var nota = $('ar-nota'), emIframe = false;
+    try { emIframe = window.self !== window.top; } catch (e) { emIframe = true; }
+    function msg(t) {
+      ar.motivo = t;
+      nota.textContent = t;
+      if (RETORNO_APP && !ar.suportado) $('retorno-texto').textContent = t;
+    }
+    if (window.PetronioAndroid) {
+      // o WebView do aplicativo não tem AR: o medidor abre no Chrome e devolve a planta
+      $('ar-config').hidden = false;
+      $('ar-url').value = lerUrlAR();
+      msg(lerUrlAR()
+        ? 'O AR abre no Chrome. Ao concluir, toque em "Enviar para o Petronio 3D" para trazer a planta para cá.'
+        : 'Para medir com AR, cole abaixo o endereço https onde o modelador está publicado. O AR abre no Chrome.');
+      return;
+    }
+    if (!window.isSecureContext) {
+      msg('AR e câmera ao vivo exigem HTTPS. Abra o arquivo por um endereço https:// ou use Foto com medidas (funciona sempre).');
+      return;
+    }
+    if (!navigator.xr || typeof navigator.xr.isSessionSupported !== 'function') {
+      msg('Este navegador não tem AR (WebXR). No Android use o Chrome com ARCore; no iPhone use Foto com medidas.' +
+        (emIframe ? ' Dentro do notebook o AR fica bloqueado: abra o HTML salvo no navegador.' : ''));
+      return;
+    }
+    navigator.xr.isSessionSupported('immersive-ar').then(function (ok) {
+      ar.suportado = ok;
+      msg(ok
+        ? 'AR disponível: aponte a câmera para o piso e marque os cantos do ambiente. Precisão típica de 1 a 3 cm; confira com a trena.'
+        : 'AR não suportado neste aparelho/navegador. Use Foto com medidas.' + (emIframe ? ' (Dentro do notebook o AR fica bloqueado.)' : ''));
+    }, function () {
+      msg('Não foi possível verificar o AR aqui. Use Foto com medidas.');
+    });
+  }
+
+  function infoAR(t) { $('ar-info').textContent = t; }
+
+  function atualizarUIAR() {
+    $('ar-m-cantos').setAttribute('aria-pressed', String(ar.modo === 'cantos'));
+    $('ar-m-trena').setAttribute('aria-pressed', String(ar.modo === 'trena'));
+    $('ar-desfazer').disabled = ar.modo === 'cantos' ? !ar.pontos.length : (!ar.trena && !medidasAR.length);
+    $('ar-concluir').disabled = ar.modo === 'cantos' && ar.pontos.length > 0 && ar.pontos.length < 3;
+  }
+
+  function iniciarAR() {
+    if (window.PetronioAndroid && typeof window.PetronioAndroid.abrirAR === 'function') {
+      var url = lerUrlAR();
+      if (!/^https:\/\/\S+$/i.test(url)) {
+        irParaAba('planta');
+        $('ar-url').focus();
+        aviso('Cole no campo "Endereço do medidor AR" o link https onde o modelador está publicado.');
+        return;
+      }
+      aviso(window.PetronioAndroid.abrirAR(url + (url.indexOf('?') < 0 ? '?' : '&') + 'retorno=app'));
+      return;
+    }
+    if (ar.sessao) return;
+    if (!ar.suportado) { aviso(ar.motivo || 'AR indisponível neste aparelho.'); return; }
+    if (typeof THREE === 'undefined') { aviso('O AR precisa do Three.js, que não carregou. Verifique a internet.'); return; }
+    var ui = $('ar-ui');
+    ui.hidden = false;
+    ar.pontos = [];
+    ar.trena = null;
+    ar.modo = 'cantos';
+    ar.descartar = false;
+    ar.textoVivo = '';
+    infoAR('Aponte a câmera para o piso e mova o celular devagar até aparecer o alvo.');
+    atualizarUIAR();
+    navigator.xr.requestSession('immersive-ar', {
+      requiredFeatures: ['hit-test'],
+      optionalFeatures: ['dom-overlay'],
+      domOverlay: { root: ui }
+    }).then(comecarSessaoAR, function (e) {
+      ui.hidden = true;
+      aviso('Não foi possível iniciar o AR' + (e && e.message ? ': ' + e.message : '.'));
+    });
+  }
+
+  function barraAR(cor) {
+    var m = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, 1, 8), new THREE.MeshBasicMaterial({ color: cor }));
+    m.userData.ar = true;
+    return m;
+  }
+
+  function posicionarBarra(m, a, b) {
+    var d = b.clone().sub(a), L = d.length();
+    m.visible = L > 0.002;
+    if (!m.visible) return;
+    m.position.copy(a).addScaledVector(d, 0.5);
+    m.scale.set(1, L, 1);
+    m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), d.normalize());
+  }
+
+  function distanciaAR(a, b, soPiso) {
+    return soPiso ? Math.hypot(b.x - a.x, b.z - a.z) : a.distanceTo(b);
+  }
+
+  function segmentoAR(a, b, soPiso) {
+    var barra = barraAR(0x5fd0e8);
+    posicionarBarra(barra, a, b);
+    ar.grupo.add(barra);
+    var rot = makeLabel(fmt(distanciaAR(a, b, soPiso) * 100) + ' cm', '#5fd0e8', 1);
+    rot.position.copy(a).add(b).multiplyScalar(0.5);
+    rot.position.y += 0.04;
+    rot.scale.set(rot.userData.base.x * 0.05, 0.05, 1);
+    ar.grupo.add(rot);
+  }
+
+  function marcadorAR(p) {
+    var m = new THREE.Mesh(new THREE.SphereGeometry(0.012, 16, 12), new THREE.MeshBasicMaterial({ color: 0xe0a458 }));
+    m.position.copy(p);
+    ar.grupo.add(m);
+  }
+
+  function limparGrupoAR() {
+    while (ar.grupo.children.length) {
+      var o = ar.grupo.children.pop();
+      if (o.geometry) o.geometry.dispose();
+      if (o.material) { if (o.material.map) o.material.map.dispose(); o.material.dispose(); }
+    }
+  }
+
+  function redesenharAR() {
+    limparGrupoAR();
+    ar.pontos.forEach(function (p, i) {
+      marcadorAR(p);
+      if (i) segmentoAR(ar.pontos[i - 1], p, true);
+    });
+    if (ar.trena) marcadorAR(ar.trena);
+  }
+
+  function comecarSessaoAR(sessao) {
+    ar.sessao = sessao;
+    var r = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    r.setPixelRatio(window.devicePixelRatio || 1);
+    r.setSize(window.innerWidth, window.innerHeight);
+    r.xr.enabled = true;
+    r.xr.setReferenceSpaceType('local');
+    ar.renderer = r;
+    ar.cena = new THREE.Scene();
+    ar.camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.01, 50);
+    ar.cena.add(new THREE.HemisphereLight(0xffffff, 0x666666, 1));
+    ar.retic = new THREE.Mesh(new THREE.RingGeometry(0.035, 0.05, 32).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0xffffff }));
+    ar.retic.matrixAutoUpdate = false;
+    ar.retic.visible = false;
+    ar.cena.add(ar.retic);
+    ar.alvo = new THREE.Vector3();
+    ar.grupo = new THREE.Group();
+    ar.cena.add(ar.grupo);
+    ar.viva = barraAR(0xe0a458);
+    ar.viva.visible = false;
+    ar.cena.add(ar.viva);
+    sessao.addEventListener('end', fimAR);
+    sessao.addEventListener('select', marcarPontoAR);       // toque na tela (fora dos botões)
+    r.xr.setSession(sessao).catch(function (e) {
+      aviso('Falha ao iniciar o AR: ' + (e && e.message ? e.message : e));
+      sessao.end().catch(function () { /* já encerrada */ });
+    });
+    sessao.requestReferenceSpace('viewer').then(function (vs) {
+      return sessao.requestHitTestSource({ space: vs });
+    }).then(function (fonte) {
+      ar.fonte = fonte;
+    }, function () {
+      infoAR('Este aparelho não liberou a detecção de superfícies (hit-test).');
+    });
+    r.setAnimationLoop(quadroAR);
+  }
+
+  function quadroAR(tempo, frame) {
+    if (!frame || !ar.renderer) return;
+    var ref = ar.renderer.xr.getReferenceSpace();
+    ar.temAlvo = false;
+    if (ar.fonte && ref) {
+      var hits = frame.getHitTestResults(ar.fonte);
+      if (hits.length) {
+        var pose = hits[0].getPose(ref);
+        if (pose) {
+          ar.retic.matrix.fromArray(pose.transform.matrix);
+          ar.alvo.setFromMatrixPosition(ar.retic.matrix);
+          ar.temAlvo = true;
+        }
+      }
+    }
+    ar.retic.visible = ar.temAlvo;
+    atualizarVivoAR();
+    ar.renderer.render(ar.cena, ar.camera);
+  }
+
+  function atualizarVivoAR() {
+    var base = ar.modo === 'cantos' ? ar.pontos[ar.pontos.length - 1] : ar.trena, txt;
+    if (base && ar.temAlvo) {
+      posicionarBarra(ar.viva, base, ar.alvo);
+      var cm = distanciaAR(base, ar.alvo, ar.modo === 'cantos') * 100;
+      txt = (ar.modo === 'cantos' ? 'Próxima parede: ' : 'Distância: ') + fmt(cm) + ' cm';
+      if (ar.modo === 'cantos' && ar.pontos.length >= 3 && ar.alvo.distanceTo(ar.pontos[0]) < 0.1) txt += ' · toque para fechar no 1º canto';
+    } else {
+      ar.viva.visible = false;
+      if (!ar.temAlvo) txt = 'Procurando o piso… mova o celular devagar.';
+      else if (ar.modo === 'cantos') txt = ar.pontos.length ? 'Mire no próximo canto e toque em +' : 'Mire no 1º canto do piso e toque em +';
+      else txt = 'Trena: mire no início da medida e toque em +' + (medidasAR.length ? ' · ' + medidasAR.length + ' medida(s) salva(s)' : '');
+    }
+    if (txt !== ar.textoVivo) { ar.textoVivo = txt; infoAR(txt); }
+  }
+
+  function marcarPontoAR() {
+    if (!ar.sessao) return;
+    if (!ar.temAlvo) { ar.textoVivo = ''; infoAR('Sem alvo: aponte para o piso e mova o celular devagar.'); return; }
+    var p = ar.alvo.clone();
+    if (ar.modo === 'cantos') {
+      if (ar.pontos.length >= 3 && p.distanceTo(ar.pontos[0]) < 0.1) { concluirAR(); return; }
+      if (ar.pontos.length >= LIMITES.maxPontos) return;
+      if (ar.pontos.length) segmentoAR(ar.pontos[ar.pontos.length - 1], p, true);
+      ar.pontos.push(p);
+      marcadorAR(p);
+    } else if (!ar.trena) {
+      ar.trena = p;
+      marcadorAR(p);
+    } else {
+      var cm = r1(ar.trena.distanceTo(p) * 100);
+      segmentoAR(ar.trena, p, false);
+      marcadorAR(p);
+      medidasAR.push({ nome: 'Trena AR ' + (medidasAR.length + 1), cm: cm });
+      ar.trena = null;
+      if (navigator.vibrate) navigator.vibrate(30);
+    }
+    atualizarUIAR();
+  }
+
+  function desfazerAR() {
+    if (ar.modo === 'cantos') ar.pontos.pop();
+    else if (ar.trena) ar.trena = null;
+    else medidasAR.pop();
+    redesenharAR();
+    atualizarUIAR();
+  }
+
+  function modoAR(m) {
+    ar.modo = m;
+    ar.trena = null;
+    redesenharAR();
+    ar.textoVivo = '';
+    atualizarUIAR();
+  }
+
+  function concluirAR() {
+    if (ar.modo === 'cantos' && ar.pontos.length && ar.pontos.length < 3) { infoAR('Marque pelo menos 3 cantos (ou Desfazer).'); return; }
+    if (ar.sessao) ar.sessao.end();
+  }
+
+  function sairAR() {
+    ar.descartar = true;
+    if (ar.sessao) ar.sessao.end();
+  }
+
+  function fimAR() {
+    var pts = ar.pontos.slice(), descartar = ar.descartar;
+    if (ar.renderer) {
+      ar.renderer.setAnimationLoop(null);
+      limparGrupoAR();
+      [ar.retic, ar.viva].forEach(function (m) { m.geometry.dispose(); m.material.dispose(); });
+      ar.renderer.dispose();
+    }
+    if (ar.fonte && ar.fonte.cancel) { try { ar.fonte.cancel(); } catch (e) { /* já cancelada */ } }
+    ar.renderer = null; ar.fonte = null; ar.sessao = null; ar.pontos = []; ar.trena = null;
+    $('ar-ui').hidden = true;
+    if (RETORNO_APP) { prepararEnvio(descartar ? [] : pts); return; }
+    if (!descartar && pts.length >= 3) plantaDoAR(pts);
+    else if (!descartar && pts.length) aviso('Poucos cantos (mínimo 3): nada foi enviado para a planta.');
+    else if (medidasAR.length) aviso('Medidas da trena AR estão na aba Planta, em "Medidas coletadas".');
+    atualizarListasLevantamento();
+    redesenhar();
+  }
+
+  /* Pontos do AR (metros) → cantos da planta (cm), com a 1ª parede alinhada ao eixo X. */
+  function cmDoAR(pts) {
+    var o = pts[0], ang = Math.atan2(pts[1].z - o.z, pts[1].x - o.x), c = Math.cos(-ang), s = Math.sin(-ang);
+    return pts.map(function (p) {
+      var x = (p.x - o.x) * 100, y = (p.z - o.z) * 100;
+      return { x: r1(x * c - y * s), y: r1(x * s + y * c) };
+    });
+  }
+
+  /* Medidor aberto pelo aplicativo: prepara o link que devolve a planta e as medidas para ele. */
+  function prepararEnvio(pts) {
+    if (pts.length >= 3) retornoDados.pts = cmDoAR(pts).map(function (q) { return [q.x, q.y]; });
+    retornoDados.medidas = medidasAR.map(function (m) { return { nome: m.nome, cm: m.cm }; });
+    var n = retornoDados.pts.length, m = retornoDados.medidas.length, link = $('retorno-enviar');
+    link.hidden = !(n || m);
+    link.href = 'intent://planta?d=' + encodeURIComponent(JSON.stringify(retornoDados)) +
+      '#Intent;scheme=petronio3d;package=com.petronio.modelador3d;end';
+    $('retorno-texto').textContent = n || m
+      ? 'Pronto: ' + (n ? n + ' cantos' : 'nenhum canto') + (m ? ' e ' + m + ' medida(s) da trena' : '') + '. Toque em Enviar para levar ao Petronio 3D, ou meça de novo.'
+      : 'Nada foi medido. Toque em Iniciar medição e marque pelo menos 3 cantos no piso.';
+  }
+
+  /* Recebe no aplicativo o que o medidor AR (no Chrome) enviou. */
+  window.PetronioReceberAR = function (txt) {
+    var d = null, novas = 0;
+    try { d = JSON.parse(txt); } catch (e) { aviso('Os dados do AR chegaram inválidos.'); return; }
+    if (d && Array.isArray(d.medidas)) {
+      d.medidas.slice(0, 100).forEach(function (m) {
+        var cm = Number(m && m.cm);
+        if (cm > 0 && cm < 100000) { medidasAR.push({ nome: String((m && m.nome) || 'Trena AR').slice(0, 40), cm: r1(cm) }); novas++; }
+      });
+    }
+    var p = sanitizarPlanta({ pts: d && d.pts, fechada: true });
+    irParaAba('planta');
+    if (p.pts.length >= 3) {
+      p.peDireito = pl.peDireito;
+      pl = p;
+      pv.sel = null;
+      commit();
+      enquadrarPlanta();
+      atualizarPlanta();
+      aviso('Planta do AR recebida: ' + p.pts.length + ' cantos' + (novas ? ' e ' + novas + ' medida(s)' : '') + '. Confira com a trena; "Esquadrejar" endireita ângulos de ~90°.');
+    } else {
+      atualizarListasLevantamento();
+      aviso(novas ? novas + ' medida(s) do AR em "Medidas coletadas".' : 'Nada foi medido no AR.');
+    }
+  };
+
+  function plantaDoAR(pts) {
+    var pe = pl.peDireito;
+    pl = plantaVazia();
+    pl.peDireito = pe;
+    pl.pts = cmDoAR(pts);
+    pl.fechada = true;
+    pv.sel = null;
+    commit();
+    irParaAba('planta');
+    enquadrarPlanta();
+    atualizarPlanta();
+    aviso('Planta criada com ' + pts.length + ' cantos medidos em AR. Confira com a trena; "Esquadrejar" endireita ângulos de ~90°.');
+  }
+
+  /* ====================================================================
+     TECLADO
+     ==================================================================== */
+  function aoTeclar(ev) {
+    var tag = ev.target && ev.target.tagName, k = ev.key || '';
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+    if (!$('tela-foto').hidden) { teclaFoto(ev, k); return; }
+    if (ar.sessao) return;
+    var ctrl = ev.ctrlKey || ev.metaKey;
+    if (ctrl && (k === 'z' || k === 'Z')) { ev.preventDefault(); if (ev.shiftKey) refazer(); else desfazer(); return; }
+    if (ctrl && (k === 'y' || k === 'Y')) { ev.preventDefault(); refazer(); return; }
+    if (state.aba === 'planta') { teclaPlanta(ev, k); return; }
+    if (!pronto || !selected) return;
+    if (k === 'Delete' || k === 'Backspace') { ev.preventDefault(); excluir(); }
+    else if (k === 'Escape') { selecionar(null); }
+    else if (k === 'r' || k === 'R') { girar(ev.shiftKey ? -90 : 90); }
+    else if (k === 'd' || k === 'D') { duplicar(); }
+    else if (k.indexOf('Arrow') === 0) {
+      ev.preventDefault();
+      var p = ev.shiftKey ? 0.01 : PASSO_GRADE;
+      if (k === 'ArrowLeft') mover(-p, 0);
+      else if (k === 'ArrowRight') mover(p, 0);
+      else if (k === 'ArrowUp') mover(0, -p);
+      else if (k === 'ArrowDown') mover(0, p);
+    }
+  }
+
+  /* ====================================================================
+     INICIALIZAÇÃO
+     ==================================================================== */
+  function aoRedimensionar() {
+    if (!renderer) return;
+    var box = $('canvas3d');
+    var w = box.clientWidth || 1, h = box.clientHeight || 1;
+    camera.aspect = w / h;
+    camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+    redesenhar();
+  }
+
+  function animar() {
+    requestAnimationFrame(animar);
+    if (state.aba === 'planta' || ar.sessao) return;     // 3D escondido: não gasta bateria
+    var mexeu = controls.update();
+    if (mexeu || sujo) {
+      sujo = false;
+      ajustarRotulos();
+      renderer.render(scene, camera);
+    }
+  }
+
+  /* Ações que só fazem sentido com o 3D carregado. */
+  var PRECISA_3D = { 'add-parede': 1, 'add-pia': 1, 'add-aereo': 1, 'add-roupeiro': 1, 'add-custom': 1, exemplo: 1,
+    'girar-': 1, 'girar+': 1, duplicar: 1, excluir: 1, cotas: 1, 'vista-persp': 1, 'vista-topo': 1, 'vista-frente': 1,
+    'vista-lateral': 1, enquadrar: 1, png: 1 };
+
+  function acao(nome, botao) {
+    if (PRECISA_3D[nome] && !pronto) { aviso('O visualizador 3D não está disponível. A planta e as fotos continuam funcionando.'); return; }
+    switch (nome) {
+      case 'fechar-painel': $('app').classList.add('fechado'); atualizarAbas(); break;
+      case 'desfazer': desfazer(); break;
+      case 'refazer': refazer(); break;
+      case 'add-parede': adicionar('parede'); break;
+      case 'add-pia': adicionar('pia'); break;
+      case 'add-aereo': adicionar('aereo'); break;
+      case 'add-roupeiro': adicionar('roupeiro'); break;
+      case 'add-custom': adicionar('custom'); break;
+      case 'exemplo': cenaExemplo(); break;
+      case 'girar-': girar(-90); break;
+      case 'girar+': girar(90); break;
+      case 'duplicar': duplicar(); break;
+      case 'excluir': excluir(); break;
+      case 'desselecionar': selecionar(null); break;
+      case 'limpar': confirmarDuplo(botao, 'Limpar cena', limparCena); break;
+      case 'cotas':
+        state.cotaModo = state.cotaModo === 'todas' ? 'sel' : (state.cotaModo === 'sel' ? 'off' : 'todas');
+        $('btn-cotas').textContent = 'Cotas: ' + (state.cotaModo === 'todas' ? 'todas' : (state.cotaModo === 'sel' ? 'seleção' : 'off'));
+        $('btn-cotas').setAttribute('aria-pressed', String(state.cotaModo !== 'off'));
+        atualizarCotas();
+        break;
+      case 'snap':
+        state.encaixe = !state.encaixe;
+        document.querySelectorAll('[data-act="snap"]').forEach(function (b) { b.setAttribute('aria-pressed', String(state.encaixe)); });
+        aviso(state.encaixe ? 'Encaixe ligado: grade de 5 cm e ímã de bordas.' : 'Encaixe desligado.');
+        pedirPlanta();
+        break;
+      case 'vista-persp': definirVista('persp'); break;
+      case 'vista-topo': definirVista('topo'); break;
+      case 'vista-frente': definirVista('frente'); break;
+      case 'vista-lateral': definirVista('lateral'); break;
+      case 'enquadrar': enquadrar(); break;
+      case 'salvar-json':
+        baixar(new Blob([JSON.stringify(serializar(), null, 2)], { type: 'application/json' }), 'petronio-projeto.json');
+        break;
+      case 'abrir-json': $('arquivo').click(); break;
+      case 'png': exportarPNG(); break;
+      case 'csv-pecas': exportarCsv(); break;
+
+      // planta baixa
+      case 'ver-3d': irParaAba('add'); break;
+      case 'pl-enquadrar': enquadrarPlanta(); break;
+      case 'pl-esquadro':
+        pv.esquadro = !pv.esquadro;
+        $('btn-esquadro').setAttribute('aria-pressed', String(pv.esquadro));
+        aviso(pv.esquadro ? 'Esquadro ligado: traços em 0°, 45° e 90° e alinhados aos outros cantos.' : 'Esquadro desligado: traço livre.');
+        pedirPlanta();
+        break;
+      case 'pl-desfazer-ponto': apagarUltimoCanto(); break;
+      case 'pl-fechar': fecharPlanta(); break;
+      case 'pl-retangulo': criarRetangulo(); break;
+      case 'pl-add-medida': adicionarPorMedida(); break;
+      case 'pl-add-porta': adicionarAbertura('porta'); break;
+      case 'pl-add-janela': adicionarAbertura('janela'); break;
+      case 'pl-esquadrejar': esquadrejar(); break;
+      case 'pl-dividir': dividirSelecao(); break;
+      case 'pl-excluir': excluirSelecaoPlanta(); break;
+      case 'pl-desselecionar': selPlanta(null); break;
+      case 'pl-gerar': gerarParedes(); break;
+      case 'pl-png': exportarPlantaPNG(); break;
+      case 'pl-limpar': confirmarDuplo(botao, 'Limpar planta', limparPlanta); break;
+
+      // escanear
+      case 'scan-foto': abrirTelaFoto(null); break;
+      case 'scan-ar': iniciarAR(); break;
+      case 'foto-camera': abrirCamera(); break;
+      case 'foto-arquivo': $('foto-input').click(); break;
+      case 'foto-capturar': capturarCamera(); break;
+      case 'foto-cam-cancelar': cancelarCamera(); break;
+      case 'foto-nova': pararCamera(); fv.foto = null; mostrarFotoOuVazio(); break;
+      case 'foto-ajustar': ajustarFoto(); break;
+      case 'foto-png': exportarFotoImagem(); break;
+      case 'foto-fechar': fecharTelaFoto(); break;
+      case 'ar-cantos': modoAR('cantos'); break;
+      case 'ar-trena': modoAR('trena'); break;
+      case 'ar-marcar': marcarPontoAR(); break;
+      case 'ar-desfazer': desfazerAR(); break;
+      case 'ar-concluir': concluirAR(); break;
+      case 'ar-sair': sairAR(); break;
+    }
+  }
+
+  function ligarInterface() {
+    document.addEventListener('click', function (ev) {
+      var alvo = ev.target.closest ? ev.target : ev.target.parentElement;
+      if (!alvo) return;
+      var t = alvo.closest('[data-aba]');
+      if (t) { abrirAba(t.dataset.aba); return; }
+      var b = alvo.closest('[data-act]');
+      if (b) { if (!b.disabled) acao(b.dataset.act, b); return; }
+      var li = alvo.closest('.item');
+      if (li) {
+        var id = Number(li.dataset.id);
+        selecionar(items.find(function (i) { return i.id === id; }) || null);
+        return;
+      }
+      // planta: lista de paredes, aberturas, direções, fotos
+      var x;
+      if ((x = alvo.closest('[data-pl-sel]'))) { selPlanta({ t: 'p', i: Number(x.dataset.plSel) }); return; }
+      if ((x = alvo.closest('[data-ab-sel]'))) { selPlanta({ t: 'a', i: Number(x.dataset.abSel) }); return; }
+      if ((x = alvo.closest('[data-ab-del]'))) {
+        pl.aberturas.splice(Number(x.dataset.abDel), 1);
+        pv.sel = { t: 'p', i: paredeSelecionada() >= 0 ? paredeSelecionada() : 0 };
+        commit();
+        atualizarPlanta();
+        return;
+      }
+      if ((x = alvo.closest('[data-dir]'))) { definirDirecao(Number(x.dataset.dir)); return; }
+      if ((x = alvo.closest('[data-foto-abrir]'))) { abrirTelaFoto(fotos[Number(x.dataset.fotoAbrir)]); return; }
+      if ((x = alvo.closest('[data-foto-del]'))) { excluirFoto(Number(x.dataset.fotoDel)); return; }
+      // foto: estrela de referência, excluir linha, selecionar linha
+      if ((x = alvo.closest('[data-fl-ref]'))) {
+        var i = Number(x.dataset.flRef), liga = !fv.foto.linhas[i].ref;
+        fv.foto.linhas.forEach(function (l, j) { l.ref = liga && j === i; });
+        if (liga && !(fv.foto.linhas[i].cm > 0)) aviso('Digite a medida real desta linha para ela servir de referência.');
+        atualizarEstimativas();
+        pedirFoto();
+        return;
+      }
+      if ((x = alvo.closest('[data-fl-del]'))) {
+        fv.foto.linhas.splice(Number(x.dataset.flDel), 1);
+        fv.sel = -1;
+        renderFotoLista();
+        pedirFoto();
+        return;
+      }
+      if ((x = alvo.closest('[data-fl-linha]'))) { fv.sel = Number(x.dataset.flLinha); marcarLinhaAtiva(); pedirFoto(); }
+    });
+
+    // campos do inspetor (3D)
+    CAMPOS.forEach(function (id) {
+      $(id).addEventListener('input', lerInspetor);
+      $(id).addEventListener('change', atualizarInspetor);
+    });
+    $('esp-chapa').addEventListener('input', function (ev) {
+      var v = parseFloat(ev.target.value);
+      if (isFinite(v)) { state.espChapa = clamp(v, 3, 50); atualizarPecas(); }
+    });
+    $('esc-texto').addEventListener('input', function (ev) {
+      state.escalaTexto = parseFloat(ev.target.value) || 1;
+      redesenhar();
+    });
+    $('arquivo').addEventListener('change', function (ev) {
+      var f = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      if (!f) return;
+      if (f.size > 2 * 1024 * 1024) { aviso('Arquivo grande demais (máx. 2 MB).'); return; }
+      var rd = new FileReader();
+      rd.onload = function () { importarTexto(String(rd.result)); };
+      rd.onerror = function () { aviso('Não foi possível ler o arquivo.'); };
+      rd.readAsText(f);
+    });
+
+    // planta: campos (aplicados no "change" para não aplicar valores pela metade enquanto digita)
+    $('pane-planta').addEventListener('change', function (ev) {
+      var t = ev.target, v = parseFloat(t.value);
+      if (t.dataset.plComp != null) mudarComprimento(Number(t.dataset.plComp), v);
+      else if (t.dataset.ab != null) campoAbertura(Number(t.dataset.ab), t.dataset.campo, v);
+      else if (t.dataset.med != null) { usarMedida(Number(t.dataset.med), t.value); t.value = ''; }
+      else if (t.id === 'pl-pe') {
+        if (isFinite(v)) { pl.peDireito = r1(clamp(v, 50, LIMITES.max)); commit(); }
+        atualizarPlanta();
+      }
+    });
+    $('pl-ang').addEventListener('input', atualizarBotoesDirecao);
+    $('ar-url').addEventListener('change', function (ev) {
+      var url = ev.target.value.trim();
+      if (url && !/^https:\/\//i.test(url)) url = 'https://' + url.replace(/^\w+:\/\//, '');
+      ev.target.value = url;
+      salvarUrlAR(url);
+      verificarAR();
+      if (url) aviso('Endereço salvo. Agora toque em Medir com AR.');
+    });
+    $('chip-pl-valor').addEventListener('change', valorChipPlanta);
+    document.addEventListener('keydown', function (ev) {          // Enter confirma campos de medida (e fecha o teclado)
+      var t = ev.target;
+      if (ev.key !== 'Enter' || !t || t.tagName !== 'INPUT') return;
+      if (t.id === 'pl-comp' || t.id === 'pl-ang') { ev.preventDefault(); adicionarPorMedida(); return; }
+      if (t.dataset.plComp != null || t.dataset.ab != null || t.dataset.flCm != null || t.id === 'chip-pl-valor' || t.id === 'pl-pe') t.blur();
+    }, true);
+
+    var cvp = $('planta2d');
+    cvp.addEventListener('pointerdown', plPressionar);
+    cvp.addEventListener('pointerleave', function () { if (pv.hover) { pv.hover = null; pedirPlanta(); } });
+    cvp.addEventListener('wheel', plRoda, { passive: false });
+    cvp.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+    window.addEventListener('pointermove', plMover);
+    window.addEventListener('pointerup', plSoltar);
+    window.addEventListener('pointercancel', plSoltar);
+
+    // foto com medidas
+    var cvf = $('foto-cv');
+    cvf.addEventListener('pointerdown', fPressionar);
+    cvf.addEventListener('wheel', fRoda, { passive: false });
+    cvf.addEventListener('contextmenu', function (ev) { ev.preventDefault(); });
+    window.addEventListener('pointermove', fMover);
+    window.addEventListener('pointerup', fSoltar);
+    window.addEventListener('pointercancel', fSoltar);
+    $('foto-input').addEventListener('change', function (ev) {
+      var f = ev.target.files && ev.target.files[0];
+      ev.target.value = '';
+      carregarArquivoFoto(f);
+    });
+    $('foto-linhas').addEventListener('input', function (ev) {
+      var t = ev.target, l;
+      if (!fv.foto) return;
+      if (t.dataset.flCm != null && (l = fv.foto.linhas[Number(t.dataset.flCm)])) {
+        var v = parseFloat(t.value);
+        l.cm = isFinite(v) && v > 0 ? r1(Math.min(v, 100000)) : null;
+        atualizarEstimativas();
+        pedirFoto();
+      } else if (t.dataset.flNome != null && (l = fv.foto.linhas[Number(t.dataset.flNome)])) {
+        l.nome = t.value.slice(0, 40);
+        pedirFoto();
+      }
+    });
+    $('foto-linhas').addEventListener('focusin', function (ev) {
+      var r = ev.target.closest('[data-fl-linha]');
+      if (r && Number(r.dataset.flLinha) !== fv.sel) { fv.sel = Number(r.dataset.flLinha); marcarLinhaAtiva(); pedirFoto(); }
+    });
+
+    // AR: toques nos botões da sobreposição não viram "marcar ponto"
+    $('ar-ui').addEventListener('beforexrselect', function (ev) {
+      if (ev.target.closest && ev.target.closest('button, input, select')) ev.preventDefault();
+    });
+
+    if (typeof ResizeObserver !== 'undefined') {
+      new ResizeObserver(function () { pedirPlanta(); }).observe($('viewport'));
+      new ResizeObserver(function () { pedirFoto(); }).observe($('foto-area'));
+    }
+    window.addEventListener('resize', function () { pedirPlanta(); pedirFoto(); atualizarAbas(); });
+    document.addEventListener('keydown', aoTeclar);
+    // grava o que ainda estava aguardando o histórico antes de fechar a aba ou trocar de app
+    window.addEventListener('pagehide', function () { if (hist.timer) commit(); pararCamera(); });
+    document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden' && hist.timer) commit(); });
+    atualizarAbas();
+    atualizarBotoesDirecao();
+    atualizarLista();
+  }
+
+  function falhaBibliotecas() {
+    $('canvas3d').textContent = 'Não foi possível carregar o Three.js. Verifique a conexão com a internet e recarregue. A planta baixa e as fotos com medidas continuam funcionando.';
+  }
+
+  function iniciar() {
+    var box = $('canvas3d');
+    if (typeof THREE === 'undefined' || !THREE.OrbitControls) { falhaBibliotecas(); return; }
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    } catch (e) {
+      box.textContent = 'WebGL indisponível neste navegador/dispositivo. A planta baixa e as fotos continuam funcionando.';
+      return;
+    }
+    renderer.setClearColor(0x000000, 0);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+    scene = new THREE.Scene();
+    camera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    camera.position.set(6, 4, 7);
+    vTmp = new THREE.Vector3();
+    planoArrasto = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    ponteiro = new THREE.Vector2();
+    pontoHit = new THREE.Vector3();
+    offsetArrasto = new THREE.Vector3();
+
+    box.textContent = '';
+    box.style.padding = '0';
+    box.appendChild(renderer.domElement);
+
+    controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.07;
+    controls.target.set(0, 0.8, 0);
+    controls.maxPolarAngle = Math.PI * 0.499;
+    controls.addEventListener('change', redesenhar);
+
+    scene.add(new THREE.HemisphereLight(0xfff3e0, 0x2a211a, 0.85));
+    var sol = new THREE.DirectionalLight(0xffefd6, 0.95);
+    sol.position.set(8, 16, 9);
+    sol.castShadow = true;
+    sol.shadow.mapSize.set(2048, 2048);
+    sol.shadow.camera.left = -10; sol.shadow.camera.right = 10;
+    sol.shadow.camera.top = 10; sol.shadow.camera.bottom = -10;
+    sol.shadow.camera.far = 60;
+    scene.add(sol);
+    var recheio = new THREE.DirectionalLight(0x9ec9ff, 0.25);
+    recheio.position.set(-8, 6, -6);
+    scene.add(recheio);
+
+    var piso = new THREE.Mesh(new THREE.PlaneGeometry(20, 20), new THREE.ShadowMaterial({ opacity: 0.38 }));
+    piso.rotation.x = -Math.PI / 2;
+    piso.receiveShadow = true;
+    scene.add(piso);
+    scene.add(new THREE.GridHelper(20, 20, 0xe0a458, 0x4a3f35));
+
+    raycaster = new THREE.Raycaster();
+    var dom = renderer.domElement;
+    dom.style.touchAction = 'none';
+    box.addEventListener('pointerdown', aoPressionar, true);
+    window.addEventListener('pointermove', aoMover);
+    window.addEventListener('pointerup', aoSoltar);
+    window.addEventListener('pointercancel', aoSoltar);
+    dom.addEventListener('webglcontextlost', function (ev) {
+      ev.preventDefault();
+      aviso('Contexto gráfico perdido. Tentando recuperar…');
+    });
+    dom.addEventListener('webglcontextrestored', function () { redesenhar(); });
+
+    if (typeof ResizeObserver !== 'undefined') new ResizeObserver(aoRedimensionar).observe(box);
+    window.addEventListener('resize', aoRedimensionar);
+    aoRedimensionar();
+
+    pronto = true;
+    items.forEach(construir);                 // itens restaurados antes do 3D carregar
+    if (selected) marcarSelecao(selected);
+    controls.enabled = state.aba !== 'planta';
+    atualizarTudo();
+    if (items.length) enquadrar();
+    animar();
+    if (!items.length && state.aba !== 'planta' && $('tela-foto').hidden && !RETORNO_APP) aviso('Toque num móvel para selecionar e arraste para mover.');
+  }
+
+  window.PetronioApp = {
+    criarItem: criarItem, selecionar: selecionar, excluir: excluir, duplicar: duplicar, girar: girar,
+    mover: mover, limpar: limparCena, exemplo: cenaExemplo, enquadrar: enquadrar, vista: definirVista,
+    desfazer: desfazer, refazer: refazer, commit: commit,
+    serializar: serializar, carregar: carregarDados, importarTexto: importarTexto,
+    colisoes: checarColisoes, itens: function () { return items; },
+    selecionado: function () { return selected; },
+    historico: function () { return { desfazer: hist.pilha.length, refazer: hist.refaz.length }; },
+    pronto: function () { return pronto; },
+    planta: function () { return pl; },
+    abrirAba: irParaAba, gerarParedes: gerarParedes, enquadrarPlanta: enquadrarPlanta,
+    vistaPlanta: function () { return { esc: pv.esc, ox: pv.ox, oy: pv.oy }; },
+    fotos: function () { return fotos; }
+  };
+
+  /* Botão "voltar" do Android (chamado pelo aplicativo): fecha o que estiver aberto; false = pode sair. */
+  window.PetronioVoltar = function () {
+    if (ar.sessao) { sairAR(); return true; }
+    if (!$('tela-foto').hidden) { if (fv.stream) cancelarCamera(); else fecharTelaFoto(); return true; }
+    if (state.aba === 'planta' && pv.sel) { selPlanta(null); return true; }
+    if (state.aba !== 'planta' && selected) { selecionar(null); return true; }
+    if (!painelLargo() && $('app').classList.contains('fechado')) { abrirAba(state.aba); return true; }
+    return false;
+  };
+
+  ligarInterface();
+  restaurarAutosalvo();
+  verificarAR();
+  if (RETORNO_APP) $('tela-retorno').hidden = false;
+  (window.__libs || Promise.resolve()).then(function () { iniciar(); }, falhaBibliotecas);
+})();
+</script>
+</body>
+</html>
