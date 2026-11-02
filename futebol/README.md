@@ -1,47 +1,85 @@
 # Prancheta FC
 
-Jogo de gerenciamento de futebol: técnico de clube e de seleção, com carreira, mercado,
-escalação no campinho e partidas ao vivo no modo ultra rápido, com substituições e
-mudanças táticas durante o jogo.
+Jogo de gerenciamento de futebol: você é técnico de um clube e, se quiser, também de uma seleção. Monta o
+elenco, contrata, acompanha as partidas ao vivo num campo 2D e constrói a carreira ao longo das temporadas.
 
 ## Como rodar
 
-**Google Colab:** abra `Prancheta_FC.ipynb` (ou cole todo o `prancheta_fc.py` numa célula) e
-execute. Clique no link que aparece para abrir o jogo em tela cheia; ele também aparece
-dentro da própria célula.
+**Google Colab:** abra `Prancheta_FC.ipynb` (ou cole todo o `prancheta_fc.py` numa célula) e execute.
+Clique no link que aparece para abrir em tela cheia.
 
 **No computador:**
 
 ```bash
-pip install flask
-python prancheta_fc.py      # abre http://127.0.0.1:8050
+pip install flask openpyxl
+python prancheta_fc.py        # abre http://127.0.0.1:8050
 ```
 
-Para jogar no celular, use o IP do computador na mesma rede Wi-Fi (ex.: `http://192.168.0.10:8050`).
+No celular, use o IP do computador na mesma rede Wi‑Fi.
 
-## Conteúdo
+## Telas
 
-- 40 ligas de primeira divisão (Europa, Américas, Ásia, África e Oceania), com 676 clubes reais.
-- Cerca de 16 mil jogadores com posição, idade, nacionalidade, pé (destro, canhoto ou ambidestro), força,
-  força física, potencial, condição e habilidades especiais (finalização, cabeceio, drible, passe,
-  velocidade, desarme, marcação, chute de longe, bola parada, pênaltis, liderança, reflexos,
-  saída do gol, resistência, cruzamento).
-- 47 seleções, montadas a partir da nacionalidade dos jogadores, com convocação manual ou automática,
-  amistosos nas Datas FIFA e a Copa das Nações no fim de cada temporada.
-- Carreira: reputação, confiança da diretoria, demissão, propostas de clubes e de seleções.
-- Envelhecimento, evolução até o potencial, aposentadoria e novas promessas a cada temporada.
-- Os jogadores são gerados de acordo com a força de cada clube. Os nomes são fictícios.
+- **Elenco:** tabela compacta colorida por setor, com posição, número, pé, força, físico, potencial, energia,
+  salário, valor, características, idade, jogos, gols, assistências, nota média e contrato. Ordena por
+  qualquer coluna e marca os craques com ★.
+- **Painel lateral nas cores do clube:** caixa, mensagens, confiança da diretoria e da torcida, próximo
+  jogo, botões Jogar e Escalar, e ficha do jogador selecionado. A ficha traz estatísticas de temporada,
+  carreira e liga, e os botões vender, renovar, emprestar e dispensar.
+- **Agenda:** calendário com datas do time atual (clube e seleção), com filtro por competição, placar,
+  público e renda. Clicar num jogo disputado abre o relatório completo.
+- **Partida ao vivo:** transmissão em campo 2D com a bola, os 22 jogadores se movendo, a situação da jogada
+  e a área de pressão.
+  - Velocidade: Ultra rápido (padrão), Rápido ou Normal.
+  - Abas: Lances, Estatísticas, Gargalos e Outros jogos.
+  - Na pausa: substituições, formação e postura.
+- **Gargalos:** mostra por qual corredor o adversário ataca, onde seu time perde a bola, as disputas
+  vencidas por setor e alertas (cansaço, fora de posição, nota baixa) com sugestões.
+- **Relatório pós-jogo**, com 5 abas:
+  - Sumário.
+  - Estatísticas por tempo: xG, posse, finalizações (no alvo, para fora, bloqueadas, de dentro e de fora
+    da área, na trave), chances claras, escanteios, passes e cartões.
+  - Formações.
+  - Notas dos jogadores.
+  - Relato.
+- **Tabelas, Estádio, Juniores, Times, Procura, Técnicos, História, Mensagens, Opções e Seleção.**
+  - Tabelas: todas as ligas, as copas nacionais e a Copa das Nações.
+  - Estádio: capacidade, preço do ingresso e ampliação.
+  - Juniores: categoria de base, com promoção ao time principal.
+  - Seleção: convocação e escalação da seleção.
 
-## Elencos reais (CSV)
+## Mundo do jogo
 
-Para colocar elencos reais, crie um CSV separado por `;` e rode `importar_csv('arquivo.csv')`
-depois de executar o jogo (os clubes citados têm o elenco substituído):
+- 40 ligas de primeira divisão e 676 clubes. Cada liga tem o seu calendário real (europeias de agosto a
+  maio, sul-americanas no ano civil etc.).
+- Copas nacionais com mata-mata e pênaltis, Datas FIFA e Copa das Nações anual com as 16 melhores seleções.
+- Contratos com data de término, renovação, empréstimos e público e renda por jogo.
+- Confiança da diretoria e da torcida, demissão, propostas de clubes e seleções, e técnicos rivais.
+- Envelhecimento, evolução, aposentadoria, novas promessas e histórico de campeões.
 
-```
-clube;nome;posicao;idade;nacionalidade;forca;fisico;potencial;pe;habilidades
-Flamengo;Fulano da Silva;ATA;27;BR;80;75;82;E;FIN DRI
-```
+## Planilha com dados reais (.xlsx ou .csv)
 
-Posições: `GOL ZAG LAT VOL MEI ATA`. Pé: `D`, `E` ou `A`. Habilidades: os códigos listados em `HABS`.
-Para adicionar outra liga, inclua uma linha em `LIGAS` no formato
-`PAIS|Nome da liga|força do melhor|força do pior|Clube 1;Clube 2;...`.
+Em **Opções → Planilha de dados** (ou na tela inicial), carregue uma planilha. Também funciona deixar
+`prancheta_dados.xlsx` na pasta do jogo (no Colab, `/content`).
+
+O importador reconhece colunas com nomes variados em português ou inglês:
+
+- **Obrigatórias:** `Clube`, `Jogador`.
+- **Recomendadas:** `País`, `Liga`, `Posição`, `Idade` ou `Nascimento`, `Nacionalidade`.
+- **Opcionais:** `Pé`, `Força`, `Físico`, `Potencial`, `Características`, `Valor`, `Salário`, `Contrato`,
+  `Número`.
+
+Como a planilha é aplicada:
+
+- Atributos ausentes são estimados pela força da liga e do clube ou pelo valor de mercado.
+- Uma liga com o mesmo nome (ou a 1ª divisão do país) substitui a liga do jogo. Outras ligas viram novas
+  divisões.
+- Clubes cuja liga é uma copa (ex.: `Copa do Brasil`) ou está vazia entram só na copa nacional do país.
+- Pode haver uma aba só com `País`, `Competição` e `Clube`, sem jogadores. Nesse caso o elenco é gerado.
+
+## Código
+
+- `src/`: o jogo em Python, dividido em partes (dados, mundo, motor de partida, temporada, relatórios, API,
+  importador, servidor).
+- `web/`: a interface (HTML, CSS e JavaScript).
+- `python build.py`: junta tudo em `prancheta_fc.py`, o arquivo único para colar no Colab, e gera
+  `Prancheta_FC.ipynb`.
